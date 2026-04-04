@@ -1,0 +1,97 @@
+{
+  "name": "react-example",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "npx tsx server.ts",
+    "build": "vite build",
+    "build:server": "tsc -p tsconfig.server.json && node -e \"require('fs').writeFileSync('build-server/package.json', JSON.stringify({type:'commonjs'}))\"",
+    "preview": "vite preview",
+    "clean": "rm -rf dist",
+    "lint": "tsc --noEmit",
+    "electron": "electron electron/main.cjs",
+    "dist:desktop": "npm run build && npm run build:server && electron-builder --win --x64"
+  },
+  "dependencies": {
+    "axios": "^1.14.0",
+    "bcryptjs": "^3.0.3",
+    "call-bind-apply-helpers": "^1.0.2",
+    "clsx": "^2.1.1",
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^4.22.1",
+    "fuse.js": "^7.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "lucide-react": "^0.546.0",
+    "mongoose": "^9.3.3",
+    "motion": "^12.38.0",
+    "node-machine-id": "^1.1.12",
+    "papaparse": "^5.5.3",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-image-crop": "^11.0.10",
+    "react-router-dom": "^7.13.2",
+    "recharts": "^2.15.4",
+    "tailwind-merge": "^3.5.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@google/genai": "^1.47.0",
+    "@tailwindcss/vite": "^4.2.2",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^4.17.25",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/mongoose": "^5.11.96",
+    "@types/node": "^22.19.15",
+    "@types/papaparse": "^5.5.2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.2.0",
+    "autoprefixer": "^10.4.27",
+    "electron": "^41.1.0",
+    "electron-builder": "^25.1.8",
+    "javascript-obfuscator": "^5.4.1",
+    "mongodb-memory-server": "^10.4.3",
+    "tailwindcss": "^4.2.2",
+    "tsx": "^4.21.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.4.1"
+  },
+  "build": {
+    "appId": "com.hanilink.desktop",
+    "productName": "HaniLink",
+    "asar": true,
+    "asarUnpack": [
+      "build-server/**/*"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/main.cjs",
+      "build-server/**/*",
+      "package.json",
+      "!**/*.map",
+      "!**/*.ts",
+      "!**/*.tsx",
+      "!**/*.md",
+      "!**/test{,s}/**/*",
+      "!**/__tests__/**/*",
+      "!**/.cache/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    }
+  }
+}
