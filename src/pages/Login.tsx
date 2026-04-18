@@ -48,6 +48,7 @@ const Login = ({ onLogin }: LoginProps) => {
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
             <input
               type="email"
+              autoComplete="username"
               required
               className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition-all dark:text-white"
               placeholder="votre@email.com"
@@ -64,6 +65,7 @@ const Login = ({ onLogin }: LoginProps) => {
             </div>
             <input
               type="password"
+              autoComplete="current-password"
               required
               className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition-all dark:text-white"
               placeholder="••••••••"
