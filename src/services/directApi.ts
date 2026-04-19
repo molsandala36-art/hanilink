@@ -54,7 +54,22 @@ const ensureSupabase = () => {
 
 const invokeSupabaseFunction = async <T>(name: string, body: JsonRecord = {}) => {
   const client = ensureSupabase();
-  const { data, error } = await client.functions.invoke(name, { body });
+  const { data: sessionData, error: sessionError } = await client.auth.getSession();
+  if (sessionError) {
+    throw createApiError('Session Supabase introuvable. Reconnecte-toi.', 401);
+  }
+
+  const accessToken = sessionData.session?.access_token;
+  if (!accessToken) {
+    throw createApiError('Session Supabase introuvable. Reconnecte-toi.', 401);
+  }
+
+  const { data, error } = await client.functions.invoke(name, {
+    body,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
   if (error) {
     const message = error.message || 'Erreur Supabase Function';
     const missingFunction =
