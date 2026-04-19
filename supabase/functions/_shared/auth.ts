@@ -9,19 +9,20 @@ export const requireEnv = (name: string) => {
 export const createClients = (authHeader?: string | null) => {
   const supabaseUrl = requireEnv('HANI_SUPABASE_URL');
   const serviceRoleKey = requireEnv('HANI_SUPABASE_SERVICE_ROLE_KEY');
-  const anonKey = requireEnv('HANI_SUPABASE_ANON_KEY');
 
   const admin = createClient(supabaseUrl, serviceRoleKey);
-  const user = createClient(supabaseUrl, anonKey, {
-    global: authHeader ? { headers: { Authorization: authHeader } } : undefined,
-  });
 
-  return { admin, user };
+  return { admin };
 };
 
 export const requireUser = async (authHeader?: string | null) => {
-  const { admin, user } = createClients(authHeader);
-  const { data, error } = await user.auth.getUser();
+  const token = String(authHeader || '').replace(/^Bearer\s+/i, '').trim();
+  if (!token) {
+    throw new Error('Unauthorized');
+  }
+
+  const { admin } = createClients(authHeader);
+  const { data, error } = await admin.auth.getUser(token);
   if (error || !data.user) {
     throw new Error('Unauthorized');
   }
