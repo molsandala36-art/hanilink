@@ -62,6 +62,7 @@ const createDefaultFormData = () => {
 const Products = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [stockFilter, setStockFilter] = useState('all');
@@ -166,8 +167,10 @@ const Products = () => {
     try {
       const res = await api.get('/products');
       setProducts(res.data);
+      setError('');
     } catch (err) {
       console.error(err);
+      setError(language === 'ar' ? 'تعذر تحميل المنتجات' : 'Impossible de charger les produits');
     } finally {
       setLoading(false);
     }
@@ -251,17 +254,26 @@ const Products = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      let savedProduct: Product;
       if (editingProduct) {
-        await api.put(`/products/${editingProduct._id}`, formData);
+        const res = await api.put(`/products/${editingProduct._id}`, formData);
+        savedProduct = res.data;
+        setProducts((current) =>
+          current.map((product) => (product._id === editingProduct._id ? savedProduct : product))
+        );
       } else {
-        await api.post('/products', formData);
+        const res = await api.post('/products', formData);
+        savedProduct = res.data;
+        setProducts((current) => [savedProduct, ...current]);
       }
       setIsModalOpen(false);
       setEditingProduct(null);
       setFormData(createDefaultFormData());
-      fetchProducts();
+      setError('');
+      await fetchProducts();
     } catch (err) {
       console.error(err);
+      setError(language === 'ar' ? 'تعذر حفظ المنتج' : 'Impossible d’enregistrer le produit');
     }
   };
 
@@ -367,6 +379,11 @@ const Products = () => {
       </div>
 
       <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
+        {error && (
+          <div className="mx-4 mt-4 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-4 rounded-xl border border-red-100 dark:border-red-800">
+            {error}
+          </div>
+        )}
         <div className="p-4 border-b border-gray-100 dark:border-gray-700 space-y-4">
           <div className="relative w-full">
             <Search className={cn("absolute top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5", language === 'ar' ? "right-3" : "left-3")} />

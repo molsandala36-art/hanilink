@@ -102,11 +102,19 @@ function App() {
         const session = await getStoredSupabaseSession();
         if (session?.user) {
           localStorage.setItem('token', session.access_token);
-          localStorage.setItem('user', JSON.stringify(session.user));
+          const profile = await getCurrentSupabaseUserProfile(session.user);
+          localStorage.setItem('user', JSON.stringify(profile));
           setIsAuthenticated(true);
+        } else {
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          setIsAuthenticated(false);
         }
       } catch (err) {
         console.error(err);
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        setIsAuthenticated(false);
       }
     };
 
@@ -149,6 +157,11 @@ function App() {
   };
 
   const logout = async () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    localStorage.removeItem('hani_license_active');
+    setIsAuthenticated(false);
+
     if (isSupabaseConfigured) {
       try {
         await signOutFromSupabase();
@@ -156,11 +169,6 @@ function App() {
         console.error(err);
       }
     }
-
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    localStorage.removeItem('hani_license_active');
-    setIsAuthenticated(false);
   };
 
   return (
