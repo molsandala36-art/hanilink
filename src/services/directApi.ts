@@ -29,6 +29,20 @@ const TYPE_PREFIX = {
   invoice: 'FAC',
 } as const;
 
+const TABLE_ALIASES = {
+  products: ['products', 'product'],
+  suppliers: ['suppliers', 'supplier'],
+  sales: ['sales', 'sale'],
+  expenses: ['expenses', 'expense'],
+  purchaseOrders: ['purchase_orders', 'purchaseorders', 'purchase_orders'],
+  businessDocuments: ['business_documents', 'businessdocuments', 'documents', 'business_document'],
+} as const;
+
+const resolvedTableNames = new Map<keyof typeof TABLES, string>();
+
+let cachedAuthUser: User | null = null;
+let authUserPromise: Promise<User> | null = null;
+
 const ensureSupabase = () => {
   if (!isSupabaseConfigured || !supabase) {
     throw createApiError("Supabase n'est pas configure pour cette application.");
@@ -59,19 +73,115 @@ const normalizeRecord = (row: JsonRecord) => ({
   createdAt: pickCreatedAt(row),
 });
 
-const runQuery = async <T>(query: PromiseLike<{ data: T; error: any }>) => {
+const isMissingSupabaseResourceError = (error: any) => {
+  const message = String(error?.message || '').toLowerCase();
+  const code = String(error?.code || '').toUpperCase();
+  const status = Number(error?.status || error?.response?.status || 0);
+
+  return (
+    status === 404 ||
+    code === 'PGRST205' ||
+    message.includes('could not find the table') ||
+    message.includes('relation') && message.includes('does not exist') ||
+    message.includes('schema cache')
+  );
+};
+
+const isMissingSupabaseColumnError = (error: any) => {
+  const message = String(error?.message || '').toLowerCase();
+  return message.includes('column') && message.includes('does not exist');
+};
+
+const buildMissingTableMessage = (resourceLabel: string, attemptedTableNames: string[]) =>
+  `Supabase ne trouve pas encore la ressource "${resourceLabel}". Tables essayees: ${attemptedTableNames.join(', ')}. Cree la table correspondante dans Supabase ou adapte le mapping frontend.`;
+
+const runQuery = async <T>(query: PromiseLike<{ data: T; error: any }>, fallbackMessage?: string) => {
   const { data, error } = await query;
-  if (error) throw createApiError(error.message || 'Erreur Supabase');
+  if (error) {
+    if (fallbackMessage && (isMissingSupabaseResourceError(error) || isMissingSupabaseColumnError(error))) {
+      throw createApiError(fallbackMessage, 404);
+    }
+    throw createApiError(error.message || 'Erreur Supabase');
+  }
   return data;
 };
 
-const getCurrentAuthUser = async (): Promise<User> => {
-  const client = ensureSupabase();
-  const { data, error } = await client.auth.getUser();
-  if (error || !data.user) {
-    throw createApiError('Session Supabase introuvable. Reconnecte-toi.', 401);
+const getTableCandidates = (tableKey: keyof typeof TABLES) => {
+  const resolved = resolvedTableNames.get(tableKey);
+  if (resolved) return [resolved];
+
+  const primary = TABLES[tableKey];
+  const aliases = TABLE_ALIASES[tableKey] || [];
+  return Array.from(new Set([primary, ...aliases]));
+};
+
+const withTable = async <T>(
+  tableKey: keyof typeof TABLES,
+  resourceLabel: string,
+  executor: (tableName: string) => PromiseLike<{ data: T; error: any }>
+) => {
+  const candidates = getTableCandidates(tableKey);
+  let lastError: any = null;
+
+  for (const tableName of candidates) {
+    const { data, error } = await executor(tableName);
+    if (!error) {
+      resolvedTableNames.set(tableKey, tableName);
+      return data;
+    }
+
+    lastError = error;
+    if (!isMissingSupabaseResourceError(error) && !isMissingSupabaseColumnError(error)) {
+      throw createApiError(error.message || 'Erreur Supabase');
+    }
   }
-  return data.user;
+
+  throw createApiError(buildMissingTableMessage(resourceLabel, candidates), 404);
+};
+
+const sortByDateDesc = <T extends JsonRecord>(rows: T[], keys: string[]) =>
+  [...rows].sort((left, right) => {
+    const leftValue = keys.map((key) => left[key]).find(Boolean);
+    const rightValue = keys.map((key) => right[key]).find(Boolean);
+    return new Date(String(rightValue || 0)).getTime() - new Date(String(leftValue || 0)).getTime();
+  });
+
+const getCurrentAuthUser = async (): Promise<User> => {
+  if (cachedAuthUser) {
+    return cachedAuthUser;
+  }
+
+  if (authUserPromise) {
+    return authUserPromise;
+  }
+
+  authUserPromise = (async () => {
+    const client = ensureSupabase();
+    const { data: sessionData, error: sessionError } = await client.auth.getSession();
+    if (sessionError) {
+      throw createApiError('Session Supabase introuvable. Reconnecte-toi.', 401);
+    }
+
+    const sessionUser = sessionData.session?.user;
+    if (sessionUser) {
+      cachedAuthUser = sessionUser;
+      return sessionUser;
+    }
+
+    const { data, error } = await client.auth.getUser();
+    if (error || !data.user) {
+      throw createApiError('Session Supabase introuvable. Reconnecte-toi.', 401);
+    }
+
+    cachedAuthUser = data.user;
+    return data.user;
+  })();
+
+  try {
+    return await authUserPromise;
+  } finally {
+    authUserPromise = null;
+  }
 };
 
 const getCurrentUser = async (): Promise<AppUser> => normalizeSupabaseUser(await getCurrentAuthUser());
@@ -316,160 +426,189 @@ const documentToRow = async (payload: JsonRecord, existing?: JsonRecord) => {
 };
 
 const listProducts = async (): Promise<ApiResponse<any[]>> => {
-  const rows = await runQuery(ensureSupabase().from(TABLES.products).select('*').order('createdAt', { ascending: false }));
-  return { data: asArray<JsonRecord>(rows).map(productFromRow) };
+  const rows = await withTable('products', 'products', (tableName) => ensureSupabase().from(tableName).select('*'));
+  return { data: sortByDateDesc(asArray<JsonRecord>(rows).map(productFromRow), ['createdAt']) };
 };
 
 const createProduct = async (payload: JsonRecord) => {
   const row = await productToRow(payload);
-  const data = await runQuery(ensureSupabase().from(TABLES.products).insert(row).select('*').single());
+  const data = await withTable('products', 'products', (tableName) => ensureSupabase().from(tableName).insert(row).select('*').single());
   return { data: productFromRow(data as JsonRecord) };
 };
 
 const updateProduct = async (id: string, payload: JsonRecord) => {
   const row = await productToRow(payload);
-  const data = await runQuery(ensureSupabase().from(TABLES.products).update(row).eq('id', id).select('*').single());
+  const data = await withTable('products', 'products', (tableName) =>
+    ensureSupabase().from(tableName).update(row).eq('id', id).select('*').single()
+  );
   return { data: productFromRow(data as JsonRecord) };
 };
 
 const deleteProduct = async (id: string) => {
-  await runQuery(ensureSupabase().from(TABLES.products).delete().eq('id', id));
+  await withTable('products', 'products', (tableName) => ensureSupabase().from(tableName).delete().eq('id', id));
   return { data: { message: 'Product deleted' } };
 };
 
 const bulkCreateProducts = async (payload: JsonRecord[]) => {
   const rows = await Promise.all(asArray<JsonRecord>(payload).map(productToRow));
-  const data = await runQuery(ensureSupabase().from(TABLES.products).insert(rows).select('*'));
+  const data = await withTable('products', 'products', (tableName) => ensureSupabase().from(tableName).insert(rows).select('*'));
   return { data: asArray<JsonRecord>(data).map(productFromRow) };
 };
 
 const listSuppliers = async (): Promise<ApiResponse<any[]>> => {
-  const rows = await runQuery(ensureSupabase().from(TABLES.suppliers).select('*').order('createdAt', { ascending: false }));
-  return { data: asArray<JsonRecord>(rows).map(supplierFromRow) };
+  const rows = await withTable('suppliers', 'suppliers', (tableName) => ensureSupabase().from(tableName).select('*'));
+  return { data: sortByDateDesc(asArray<JsonRecord>(rows).map(supplierFromRow), ['createdAt']) };
 };
 
 const createSupplier = async (payload: JsonRecord) => {
   const row = await supplierToRow(payload);
-  const data = await runQuery(ensureSupabase().from(TABLES.suppliers).insert(row).select('*').single());
+  const data = await withTable('suppliers', 'suppliers', (tableName) => ensureSupabase().from(tableName).insert(row).select('*').single());
   return { data: supplierFromRow(data as JsonRecord) };
 };
 
 const updateSupplier = async (id: string, payload: JsonRecord) => {
   const row = await supplierToRow(payload);
-  const data = await runQuery(ensureSupabase().from(TABLES.suppliers).update(row).eq('id', id).select('*').single());
+  const data = await withTable('suppliers', 'suppliers', (tableName) =>
+    ensureSupabase().from(tableName).update(row).eq('id', id).select('*').single()
+  );
   return { data: supplierFromRow(data as JsonRecord) };
 };
 
 const deleteSupplier = async (id: string) => {
-  await runQuery(ensureSupabase().from(TABLES.suppliers).delete().eq('id', id));
+  await withTable('suppliers', 'suppliers', (tableName) => ensureSupabase().from(tableName).delete().eq('id', id));
   return { data: { message: 'Supplier deleted' } };
 };
 
 const listSales = async (): Promise<ApiResponse<any[]>> => {
-  const rows = await runQuery(ensureSupabase().from(TABLES.sales).select('*').order('createdAt', { ascending: false }));
-  return { data: asArray<JsonRecord>(rows).map(saleFromRow) };
+  const rows = await withTable('sales', 'sales', (tableName) => ensureSupabase().from(tableName).select('*'));
+  return { data: sortByDateDesc(asArray<JsonRecord>(rows).map(saleFromRow), ['createdAt']) };
 };
 
 const createSale = async (payload: JsonRecord) => {
   const row = await saleToRow(payload);
   for (const item of row.items) {
-    const productRows = await runQuery(ensureSupabase().from(TABLES.products).select('*').eq('id', item.productId).limit(1));
+    const productRows = await withTable('products', 'products', (tableName) =>
+      ensureSupabase().from(tableName).select('*').eq('id', item.productId).limit(1)
+    );
     const product = asArray<JsonRecord>(productRows)[0];
     if (!product) throw createApiError(`Produit introuvable: ${item.productId}`, 404);
-    await runQuery(
-      ensureSupabase().from(TABLES.products).update({ stock: Number(product.stock || 0) - Number(item.quantity || 0) }).eq('id', item.productId)
+    await withTable('products', 'products', (tableName) =>
+      ensureSupabase().from(tableName).update({ stock: Number(product.stock || 0) - Number(item.quantity || 0) }).eq('id', item.productId)
     );
   }
-  const data = await runQuery(ensureSupabase().from(TABLES.sales).insert(row).select('*').single());
+  const data = await withTable('sales', 'sales', (tableName) => ensureSupabase().from(tableName).insert(row).select('*').single());
   return { data: saleFromRow(data as JsonRecord) };
 };
 
 const listExpenses = async (): Promise<ApiResponse<any[]>> => {
-  const rows = await runQuery(ensureSupabase().from(TABLES.expenses).select('*').order('expenseDate', { ascending: false }));
-  return { data: asArray<JsonRecord>(rows).map(expenseFromRow) };
+  const rows = await withTable('expenses', 'expenses', (tableName) => ensureSupabase().from(tableName).select('*'));
+  return { data: sortByDateDesc(asArray<JsonRecord>(rows).map(expenseFromRow), ['expenseDate', 'createdAt']) };
 };
 
 const createExpense = async (payload: JsonRecord) => {
   const row = await expenseToRow(payload);
-  const data = await runQuery(ensureSupabase().from(TABLES.expenses).insert(row).select('*').single());
+  const data = await withTable('expenses', 'expenses', (tableName) => ensureSupabase().from(tableName).insert(row).select('*').single());
   return { data: expenseFromRow(data as JsonRecord) };
 };
 
 const updateExpense = async (id: string, payload: JsonRecord) => {
   const row = await expenseToRow(payload);
-  const data = await runQuery(ensureSupabase().from(TABLES.expenses).update(row).eq('id', id).select('*').single());
+  const data = await withTable('expenses', 'expenses', (tableName) =>
+    ensureSupabase().from(tableName).update(row).eq('id', id).select('*').single()
+  );
   return { data: expenseFromRow(data as JsonRecord) };
 };
 
 const deleteExpense = async (id: string) => {
-  await runQuery(ensureSupabase().from(TABLES.expenses).delete().eq('id', id));
+  await withTable('expenses', 'expenses', (tableName) => ensureSupabase().from(tableName).delete().eq('id', id));
   return { data: { message: 'Expense deleted' } };
 };
 
 const listPurchaseOrders = async (): Promise<ApiResponse<any[]>> => {
-  const rows = await runQuery(ensureSupabase().from(TABLES.purchaseOrders).select('*').order('createdAt', { ascending: false }));
-  return { data: asArray<JsonRecord>(rows).map(purchaseOrderFromRow) };
+  const rows = await withTable('purchaseOrders', 'purchase-orders', (tableName) => ensureSupabase().from(tableName).select('*'));
+  return { data: sortByDateDesc(asArray<JsonRecord>(rows).map(purchaseOrderFromRow), ['createdAt']) };
 };
 
 const createPurchaseOrder = async (payload: JsonRecord) => {
   const row = await purchaseOrderToRow(payload);
-  const data = await runQuery(ensureSupabase().from(TABLES.purchaseOrders).insert(row).select('*').single());
+  const data = await withTable('purchaseOrders', 'purchase-orders', (tableName) =>
+    ensureSupabase().from(tableName).insert(row).select('*').single()
+  );
   return { data: purchaseOrderFromRow(data as JsonRecord) };
 };
 
 const receivePurchaseOrder = async (id: string) => {
-  const poRows = await runQuery(ensureSupabase().from(TABLES.purchaseOrders).select('*').eq('id', id).limit(1));
+  const poRows = await withTable('purchaseOrders', 'purchase-orders', (tableName) =>
+    ensureSupabase().from(tableName).select('*').eq('id', id).limit(1)
+  );
   const current = asArray<JsonRecord>(poRows)[0];
   if (!current) throw createApiError('Purchase Order not found', 404);
   const order = purchaseOrderFromRow(current);
   if (String(order.status).toLowerCase() === 'received') throw createApiError('Order already received');
   for (const item of order.items) {
-    const productRows = await runQuery(ensureSupabase().from(TABLES.products).select('*').eq('id', item.productId).limit(1));
+    const productRows = await withTable('products', 'products', (tableName) =>
+      ensureSupabase().from(tableName).select('*').eq('id', item.productId).limit(1)
+    );
     const product = asArray<JsonRecord>(productRows)[0];
     if (product) {
-      await runQuery(
-        ensureSupabase().from(TABLES.products).update({ stock: Number(product.stock || 0) + Number(item.quantity || 0) }).eq('id', item.productId)
+      await withTable('products', 'products', (tableName) =>
+        ensureSupabase().from(tableName).update({ stock: Number(product.stock || 0) + Number(item.quantity || 0) }).eq('id', item.productId)
       );
     }
   }
-  const data = await runQuery(ensureSupabase().from(TABLES.purchaseOrders).update({ status: 'Received' }).eq('id', id).select('*').single());
+  const data = await withTable('purchaseOrders', 'purchase-orders', (tableName) =>
+    ensureSupabase().from(tableName).update({ status: 'Received' }).eq('id', id).select('*').single()
+  );
   return { data: purchaseOrderFromRow(data as JsonRecord) };
 };
 
 const deletePurchaseOrder = async (id: string) => {
-  await runQuery(ensureSupabase().from(TABLES.purchaseOrders).delete().eq('id', id));
+  await withTable('purchaseOrders', 'purchase-orders', (tableName) => ensureSupabase().from(tableName).delete().eq('id', id));
   return { data: { message: 'Purchase order deleted' } };
 };
 
 const listBusinessDocuments = async (config?: ApiConfig): Promise<ApiResponse<any[]>> => {
-  let query = ensureSupabase().from(TABLES.businessDocuments).select('*').order('issueDate', { ascending: false });
+  let queryTableName = resolvedTableNames.get('businessDocuments');
+  if (!queryTableName) {
+    const rows = await withTable('businessDocuments', 'documents', (tableName) => ensureSupabase().from(tableName).select('*'));
+    return { data: sortByDateDesc(asArray<JsonRecord>(rows).map(documentFromRow), ['issueDate', 'createdAt']) };
+  }
+  let query = ensureSupabase().from(queryTableName).select('*');
   if (config?.params?.type) query = query.eq('documentType', config.params.type);
   const rows = await runQuery(query);
-  return { data: asArray<JsonRecord>(rows).map(documentFromRow) };
+  return { data: sortByDateDesc(asArray<JsonRecord>(rows).map(documentFromRow), ['issueDate', 'createdAt']) };
 };
 
 const createBusinessDocument = async (payload: JsonRecord) => {
   const row = await documentToRow(payload);
-  const data = await runQuery(ensureSupabase().from(TABLES.businessDocuments).insert(row).select('*').single());
+  const data = await withTable('businessDocuments', 'documents', (tableName) =>
+    ensureSupabase().from(tableName).insert(row).select('*').single()
+  );
   return { data: documentFromRow(data as JsonRecord) };
 };
 
 const updateBusinessDocument = async (id: string, payload: JsonRecord) => {
-  const rows = await runQuery(ensureSupabase().from(TABLES.businessDocuments).select('*').eq('id', id).limit(1));
+  const rows = await withTable('businessDocuments', 'documents', (tableName) =>
+    ensureSupabase().from(tableName).select('*').eq('id', id).limit(1)
+  );
   const current = asArray<JsonRecord>(rows)[0];
   if (!current) throw createApiError('Document not found', 404);
   const row = await documentToRow(payload, current);
-  const data = await runQuery(ensureSupabase().from(TABLES.businessDocuments).update(row).eq('id', id).select('*').single());
+  const data = await withTable('businessDocuments', 'documents', (tableName) =>
+    ensureSupabase().from(tableName).update(row).eq('id', id).select('*').single()
+  );
   return { data: documentFromRow(data as JsonRecord) };
 };
 
 const deleteBusinessDocument = async (id: string) => {
-  await runQuery(ensureSupabase().from(TABLES.businessDocuments).delete().eq('id', id));
+  await withTable('businessDocuments', 'documents', (tableName) => ensureSupabase().from(tableName).delete().eq('id', id));
   return { data: { message: 'Document deleted' } };
 };
 
 const convertBusinessDocument = async (id: string) => {
-  const rows = await runQuery(ensureSupabase().from(TABLES.businessDocuments).select('*').eq('id', id).limit(1));
+  const rows = await withTable('businessDocuments', 'documents', (tableName) =>
+    ensureSupabase().from(tableName).select('*').eq('id', id).limit(1)
+  );
   const current = asArray<JsonRecord>(rows)[0];
   if (!current) throw createApiError('Document not found', 404);
   const source = documentFromRow(current);
@@ -477,9 +616,9 @@ const convertBusinessDocument = async (id: string) => {
     throw createApiError('Only quote and delivery note can be converted to invoice');
   }
   const user = await getCurrentUser();
-  const data = await runQuery(
+  const data = await withTable('businessDocuments', 'documents', (tableName) =>
     ensureSupabase()
-      .from(TABLES.businessDocuments)
+      .from(tableName)
       .insert({
         documentType: 'invoice',
         documentNumber: `${TYPE_PREFIX.invoice}-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(Math.random() * 9000) + 1000}`,
