@@ -109,7 +109,9 @@ Ensuite dans Xcode:
 Le repo contient maintenant une base de licensing multi-plateforme:
 
 - migration SQL: `supabase/migrations/20260419_multiplatform_licensing.sql`
+- seed SQL: `supabase/seed/20260419_initial_license.sql`
 - fonctions Edge: `supabase/functions/activate-license`, `verify-license`, `heartbeat-license`, `admin-licenses`
+- guide pratique: `docs/supabase-licensing-setup.md`
 
 Pour activer la verification de licence dans l'app:
 
