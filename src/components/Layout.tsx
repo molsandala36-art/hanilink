@@ -93,19 +93,19 @@ const Layout = ({ onLogout }: LayoutProps) => {
       {/* Sidebar */}
       <aside 
         className={cn(
-          "h-screen bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transition-all duration-300 flex flex-col shrink-0 overflow-hidden",
+          "h-screen min-h-0 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transition-all duration-300 flex flex-col shrink-0 overflow-hidden",
           isSidebarOpen ? "w-64" : "w-20",
           language === 'ar' ? "border-l border-r-0" : "border-r"
         )}
       >
-        <div className="p-6 flex items-center gap-3">
+        <div className="p-6 flex items-center gap-3 shrink-0">
           <div className="bg-orange-500 p-2 rounded-lg">
             <Store className="text-white w-6 h-6" />
           </div>
           {isSidebarOpen && <span className="font-bold text-xl text-gray-800 dark:text-white">HaniLink</span>}
         </div>
 
-        <nav className="flex-1 px-4 space-y-2 mt-4">
+        <nav className="flex-1 min-h-0 overflow-y-auto px-4 pb-4 space-y-2">
           {filteredNavigation.map((item) => {
             const isActive = location.pathname === item.href;
             return (
@@ -126,7 +126,7 @@ const Layout = ({ onLogout }: LayoutProps) => {
           })}
         </nav>
 
-        <div className="p-4 border-t border-gray-200 dark:border-gray-700">
+        <div className="p-4 border-t border-gray-200 dark:border-gray-700 shrink-0 bg-white dark:bg-gray-800">
           <div className={cn("flex items-center gap-3 mb-4", !isSidebarOpen && "justify-center")}>
             <div className="w-8 h-8 rounded-full bg-orange-100 dark:bg-orange-900/40 flex items-center justify-center text-orange-600 dark:text-orange-400 font-bold">
               {user.name?.[0]?.toUpperCase()}
