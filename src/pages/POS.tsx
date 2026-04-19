@@ -330,9 +330,9 @@ const POS = () => {
   };
 
   return (
-    <div className="h-full flex flex-col lg:flex-row gap-8">
+    <div className="h-full min-h-0 min-w-0 flex flex-col xl:flex-row gap-6 overflow-hidden">
       {/* Product Selection */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{t.pos}</h1>
           <p className="text-gray-500 dark:text-gray-400">{language === 'ar' ? 'اختر المنتجات للبيع' : 'Sélectionnez les produits pour la vente'}</p>
@@ -358,8 +358,8 @@ const POS = () => {
           />
         </div>
 
-        <div className="flex-1 overflow-auto">
-          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4 pb-4">
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1">
+          <div className="grid grid-cols-2 md:grid-cols-3 2xl:grid-cols-4 gap-4 pb-4">
             {loading ? (
               <div className="col-span-full py-12 flex justify-center">
                 <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
@@ -395,7 +395,7 @@ const POS = () => {
       </div>
 
       {/* Cart / Checkout */}
-      <div className="w-full lg:w-96 flex flex-col bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
+      <div className="w-full xl:w-[26rem] xl:max-w-[34vw] shrink-0 flex flex-col min-h-[24rem] xl:min-h-0 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
         <div className="p-6 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/50">
           <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
             <ShoppingCart className="w-5 h-5 text-orange-500" />
@@ -403,9 +403,9 @@ const POS = () => {
           </h2>
         </div>
 
-        <div className="flex-1 overflow-auto p-6 space-y-4">
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-6 space-y-4">
           {cart.map((item) => (
-            <div key={item._id} className="flex items-center gap-3">
+            <div key={item._id} className="flex items-center gap-3 min-w-0">
               <div className="flex-1 min-w-0">
                 <p className="font-bold text-gray-900 dark:text-white truncate">{item.name}</p>
                 <p className="text-xs text-gray-500 dark:text-gray-400">{formatCurrency(item.price)} / {language === 'ar' ? 'وحدة' : 'unité'}</p>
@@ -416,7 +416,7 @@ const POS = () => {
                   </p>
                 )}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
                 <button 
                   onClick={() => updateQuantity(item._id, -1)}
                   className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md text-gray-500 dark:text-gray-400"

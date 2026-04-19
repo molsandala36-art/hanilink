@@ -93,7 +93,7 @@ const Layout = ({ onLogout }: LayoutProps) => {
       {/* Sidebar */}
       <aside 
         className={cn(
-          "bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transition-all duration-300 flex flex-col",
+          "bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transition-all duration-300 flex flex-col shrink-0 overflow-hidden",
           isSidebarOpen ? "w-64" : "w-20",
           language === 'ar' ? "border-l border-r-0" : "border-r"
         )}
@@ -198,8 +198,8 @@ const Layout = ({ onLogout }: LayoutProps) => {
         </header>
         
         <div className={cn(
-          "flex-1 p-8",
-          isPosRoute ? "overflow-hidden min-h-0" : "overflow-auto"
+          "flex-1 min-w-0",
+          isPosRoute ? "overflow-hidden min-h-0 p-4 lg:p-6" : "overflow-auto p-8"
         )}>
           <Outlet />
         </div>
