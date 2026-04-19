@@ -41,6 +41,31 @@ export const requireUser = async (authHeader?: string | null) => {
   return { admin, currentUser };
 };
 
+export const requireUserByIdOrAuth = async (
+  requestedUserId?: string | null,
+  authHeader?: string | null
+) => {
+  const normalizedUserId = String(requestedUserId || '').trim();
+  const { admin } = createClients(authHeader);
+
+  if (normalizedUserId) {
+    const { data, error } = await admin
+      .from('app_users')
+      .select('id, email, role')
+      .eq('id', normalizedUserId)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data?.id) {
+      throw new Error('Unauthorized');
+    }
+
+    return { admin, currentUser: data };
+  }
+
+  return requireUser(authHeader);
+};
+
 export const requireAdminUser = async (authHeader?: string | null) => {
   const { admin, currentUser } = await requireUser(authHeader);
   const { data, error } = await admin

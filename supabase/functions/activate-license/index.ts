@@ -1,5 +1,5 @@
 import { corsHeaders, json } from '../_shared/cors.ts';
-import { requireUser } from '../_shared/auth.ts';
+import { requireUserByIdOrAuth } from '../_shared/auth.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -7,8 +7,8 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { admin, currentUser } = await requireUser(req.headers.get('Authorization'));
     const body = await req.json().catch(() => ({}));
+    const { admin, currentUser } = await requireUserByIdOrAuth(body.userId, req.headers.get('Authorization'));
     const key = String(body.key || '').trim().toUpperCase();
     const deviceId = String(body.deviceId || '').trim();
     const platform = String(body.platform || '').trim();

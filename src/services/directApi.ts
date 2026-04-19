@@ -851,10 +851,16 @@ const unsupportedSyncAction = async () => {
 };
 
 const verifyLicense = async (payload: JsonRecord = {}) => ({
-  data: await invokeSupabaseFunction('verify-license', payload),
+  data: await invokeSupabaseFunction('verify-license', {
+    ...payload,
+    userId: (await getCurrentUser()).id,
+  }),
 });
 const activateLicense = async (payload: JsonRecord = {}) => ({
-  data: await invokeSupabaseFunction('activate-license', payload),
+  data: await invokeSupabaseFunction('activate-license', {
+    ...payload,
+    userId: (await getCurrentUser()).id,
+  }),
 });
 const getAdminLicenses = async () => ({
   data: await invokeSupabaseFunction<any[]>('admin-licenses', { action: 'list' }),
