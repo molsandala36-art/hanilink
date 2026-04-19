@@ -10,6 +10,10 @@ export interface AppUser {
   name: string;
   email: string;
   shopName: string;
+  ice?: string;
+  if?: string;
+  rc?: string;
+  address?: string;
   role: AppUserRole;
   createdAt: string;
 }
@@ -36,6 +40,10 @@ export const normalizeSupabaseUser = (user: User): AppUser => {
     name: metadata.name || metadata.full_name || fallbackName,
     email: user.email || '',
     shopName: metadata.shopName || metadata.shop_name || 'HaniLink',
+    ice: metadata.ice || '',
+    if: metadata.if || '',
+    rc: metadata.rc || '',
+    address: metadata.address || '',
     role: normalizeRole(metadata.role),
     createdAt: user.created_at || new Date().toISOString(),
   };
