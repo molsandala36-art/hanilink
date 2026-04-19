@@ -1,5 +1,5 @@
 import type { User } from '@supabase/supabase-js';
-import { isSupabaseConfigured, isSupabaseFunctionsBaseUrl } from '../lib/backend';
+import { isSupabaseConfigured, isSupabaseFunctionsBaseUrl, supabasePublishableKey } from '../lib/backend';
 import { AppUser, getCurrentSupabaseUserProfile, supabase } from './supabase';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
@@ -67,6 +67,7 @@ const invokeSupabaseFunction = async <T>(name: string, body: JsonRecord = {}) =>
   const { data, error } = await client.functions.invoke(name, {
     body,
     headers: {
+      apikey: supabasePublishableKey,
       Authorization: `Bearer ${accessToken}`,
     },
   });
