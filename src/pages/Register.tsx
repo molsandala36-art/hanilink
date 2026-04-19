@@ -39,7 +39,7 @@ const Register = ({ onLogin }: RegisterProps) => {
         onLogin(res.data.token, res.data.user);
       }
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Erreur lors de l\'inscription');
+      setError(err?.message || err?.response?.data?.message || 'Erreur lors de l\'inscription');
     } finally {
       setLoading(false);
     }

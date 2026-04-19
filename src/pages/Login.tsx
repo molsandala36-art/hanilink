@@ -29,7 +29,7 @@ const Login = ({ onLogin }: LoginProps) => {
         onLogin(res.data.token, res.data.user);
       }
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Identifiants invalides');
+      setError(err?.message || err?.response?.data?.message || 'Identifiants invalides');
     } finally {
       setLoading(false);
     }
