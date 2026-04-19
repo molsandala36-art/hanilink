@@ -1,5 +1,5 @@
 import type { User } from '@supabase/supabase-js';
-import { isSupabaseConfigured, isSupabaseFunctionsBaseUrl, supabasePublishableKey } from '../lib/backend';
+import { isSupabaseConfigured, isSupabaseFunctionsBaseUrl, supabasePublishableKey, supabaseUrl } from '../lib/backend';
 import { AppUser, getCurrentSupabaseUserProfile, getStoredSupabaseSession, supabase } from './supabase';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
@@ -53,33 +53,44 @@ const ensureSupabase = () => {
 };
 
 const invokeSupabaseFunction = async <T>(name: string, body: JsonRecord = {}) => {
-  const client = ensureSupabase();
+  ensureSupabase();
   const accessToken = (await getStoredSupabaseSession())?.access_token;
   if (!accessToken) {
     throw createApiError('Session Supabase introuvable. Reconnecte-toi.', 401);
   }
 
-  const { data, error } = await client.functions.invoke(name, {
-    body,
+  const response = await fetch(`${supabaseUrl}/functions/v1/${name}`, {
+    method: 'POST',
     headers: {
+      'Content-Type': 'application/json',
       apikey: supabasePublishableKey,
       Authorization: `Bearer ${accessToken}`,
     },
+    body: JSON.stringify(body),
   });
-  if (error) {
-    const message = error.message || 'Erreur Supabase Function';
+
+  let data: any = null;
+  try {
+    data = await response.json();
+  } catch {
+    data = null;
+  }
+
+  if (!response.ok) {
+    const message = data?.message || data?.error || `Erreur Supabase Function (${response.status})`;
     const missingFunction =
-      String(message).toLowerCase().includes('not found') ||
-      String((error as any)?.context?.status || '').includes('404');
+      response.status === 404 ||
+      String(message).toLowerCase().includes('not found');
     if (missingFunction) {
       throw createApiError(
         `La fonction Supabase "${name}" n'est pas encore deployee. Deploie les Edge Functions de licensing pour activer cette fonctionnalite.`,
         501
       );
     }
-    throw createApiError(message, Number((error as any)?.context?.status || 400));
+    throw createApiError(message, response.status);
   }
-  return data as T;
+
+  return (data || {}) as T;
 };
 
 const createApiError = (message: string, status = 400) => {
