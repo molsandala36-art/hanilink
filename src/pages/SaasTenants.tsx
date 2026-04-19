@@ -4,15 +4,25 @@ import {
   CheckCircle2,
   Copy,
   Database,
+  Download,
   FileJson,
   Globe,
   KeyRound,
   Layers3,
+  RotateCcw,
+  Save,
   ShieldCheck,
 } from 'lucide-react';
 import { generateTenantProvisioningPayload, type TenantProvisioningInput } from '../lib/saasProvisioning';
 
 const STORAGE_KEY = 'hani_saas_tenant_draft';
+const RUNS_STORAGE_KEY = 'hani_saas_tenant_runs';
+
+interface SavedProvisioningRun {
+  id: string;
+  createdAt: string;
+  draft: TenantProvisioningInput;
+}
 
 const defaultDraft: TenantProvisioningInput = {
   slug: '',
@@ -40,11 +50,24 @@ const SaasTenants = () => {
       return defaultDraft;
     }
   });
+  const [savedRuns, setSavedRuns] = useState<SavedProvisioningRun[]>(() => {
+    const stored = localStorage.getItem(RUNS_STORAGE_KEY);
+    if (!stored) return [];
+    try {
+      return JSON.parse(stored) as SavedProvisioningRun[];
+    } catch {
+      return [];
+    }
+  });
   const [copied, setCopied] = useState('');
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(draft));
   }, [draft]);
+
+  useEffect(() => {
+    localStorage.setItem(RUNS_STORAGE_KEY, JSON.stringify(savedRuns));
+  }, [savedRuns]);
 
   const payload = useMemo(() => {
     if (!draft.slug || !draft.supabaseUrl || !draft.publishableKey) {
@@ -69,6 +92,38 @@ const SaasTenants = () => {
     localStorage.removeItem(STORAGE_KEY);
   };
 
+  const saveRun = () => {
+    setSavedRuns((current) => [
+      {
+        id: crypto.randomUUID(),
+        createdAt: new Date().toISOString(),
+        draft,
+      },
+      ...current.filter((run) => run.draft.slug !== draft.slug).slice(0, 11),
+    ]);
+    setCopied('saved');
+    window.setTimeout(() => setCopied(''), 1800);
+  };
+
+  const loadRun = (run: SavedProvisioningRun) => {
+    setDraft(run.draft);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const removeRun = (id: string) => {
+    setSavedRuns((current) => current.filter((run) => run.id !== id));
+  };
+
+  const downloadFile = (filename: string, content: string, mimeType = 'application/json') => {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="max-w-7xl mx-auto space-y-8">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
@@ -81,13 +136,56 @@ const SaasTenants = () => {
             Ouvre un nouveau client avec sa base Supabase separee, son domaine et sa configuration dediee.
           </p>
         </div>
-        <button
-          onClick={reset}
-          className="px-4 py-2 rounded-xl border border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-        >
-          Reinitialiser
-        </button>
+        <div className="flex flex-wrap gap-2">
+          {payload && (
+            <button
+              onClick={saveRun}
+              className="px-4 py-2 rounded-xl bg-orange-500 text-sm font-semibold text-white hover:bg-orange-600 transition-colors inline-flex items-center gap-2"
+            >
+              <Save className="w-4 h-4" />
+              {copied === 'saved' ? 'Sauvegarde' : 'Sauvegarder'}
+            </button>
+          )}
+          <button
+            onClick={reset}
+            className="px-4 py-2 rounded-xl border border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+          >
+            Reinitialiser
+          </button>
+        </div>
       </div>
+
+      {savedRuns.length > 0 && (
+        <div className={`${cardClass} p-6`}>
+          <div className="flex items-center gap-2">
+            <RotateCcw className="w-5 h-5 text-orange-500" />
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white">Runs recents</h2>
+          </div>
+          <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {savedRuns.map((run) => (
+              <div key={run.id} className="rounded-2xl bg-gray-50 dark:bg-gray-800 p-4">
+                <p className="font-semibold text-gray-900 dark:text-white">{run.draft.name || run.draft.slug}</p>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{run.draft.slug}</p>
+                <p className="mt-1 text-xs text-gray-400">{new Date(run.createdAt).toLocaleString()}</p>
+                <div className="mt-4 flex gap-2">
+                  <button
+                    onClick={() => loadRun(run)}
+                    className="rounded-xl bg-orange-500 px-3 py-2 text-sm font-semibold text-white hover:bg-orange-600 transition-colors"
+                  >
+                    Ouvrir
+                  </button>
+                  <button
+                    onClick={() => removeRun(run.id)}
+                    className="rounded-xl border border-gray-200 dark:border-gray-700 px-3 py-2 text-sm font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                  >
+                    Supprimer
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-8 xl:grid-cols-[1.05fr,0.95fr]">
         <section className={`${cardClass} p-6 md:p-8`}>
@@ -228,6 +326,12 @@ const SaasTenants = () => {
                 value={JSON.stringify(payload.tenantConfig, null, 2)}
                 copied={copied === 'tenant'}
                 onCopy={() => copy(JSON.stringify(payload.tenantConfig, null, 2), 'tenant')}
+                onDownload={() =>
+                  downloadFile(
+                    `${draft.slug || 'tenant'}-config.json`,
+                    JSON.stringify(payload.tenantConfig, null, 2)
+                  )
+                }
               />
               <OutputCard
                 title="Snippet Vercel / env"
@@ -235,6 +339,9 @@ const SaasTenants = () => {
                 value={payload.envSnippet}
                 copied={copied === 'env'}
                 onCopy={() => copy(payload.envSnippet, 'env')}
+                onDownload={() =>
+                  downloadFile(`${draft.slug || 'tenant'}-env.txt`, payload.envSnippet, 'text/plain')
+                }
               />
               <OutputCard
                 title="SQL master SaaS"
@@ -242,6 +349,9 @@ const SaasTenants = () => {
                 value={payload.masterInsertSql}
                 copied={copied === 'sql'}
                 onCopy={() => copy(payload.masterInsertSql, 'sql')}
+                onDownload={() =>
+                  downloadFile(`${draft.slug || 'tenant'}-master.sql`, payload.masterInsertSql, 'text/sql')
+                }
               />
               <div className={`${cardClass} p-6`}>
                 <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
@@ -261,7 +371,7 @@ const SaasTenants = () => {
           ) : (
             <div className={`${cardClass} p-6`}>
               <div className="rounded-2xl border border-dashed border-gray-300 dark:border-gray-700 p-8 text-center text-gray-500 dark:text-gray-400">
-                Renseigne au minimum le slug, l’URL Supabase et la publishable key pour generer le provisioning.
+                Renseigne au minimum le slug, l&apos;URL Supabase et la publishable key pour generer le provisioning.
               </div>
             </div>
           )}
@@ -298,12 +408,14 @@ const OutputCard = ({
   value,
   copied,
   onCopy,
+  onDownload,
 }: {
   title: string;
   icon: React.ReactNode;
   value: string;
   copied: boolean;
   onCopy: () => void;
+  onDownload?: () => void;
 }) => (
   <div className={`${cardClass} p-6`}>
     <div className="flex items-center justify-between gap-3">
@@ -311,13 +423,24 @@ const OutputCard = ({
         {icon}
         {title}
       </h2>
-      <button
-        onClick={onCopy}
-        className="inline-flex items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 px-3 py-2 text-sm font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-      >
-        <Copy className="w-4 h-4" />
-        {copied ? 'Copie' : 'Copier'}
-      </button>
+      <div className="flex gap-2">
+        {onDownload && (
+          <button
+            onClick={onDownload}
+            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 px-3 py-2 text-sm font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+          >
+            <Download className="w-4 h-4" />
+            Export
+          </button>
+        )}
+        <button
+          onClick={onCopy}
+          className="inline-flex items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 px-3 py-2 text-sm font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+        >
+          <Copy className="w-4 h-4" />
+          {copied ? 'Copie' : 'Copier'}
+        </button>
+      </div>
     </div>
     <textarea
       readOnly
