@@ -46,6 +46,12 @@ Tu peux aussi generer une entree client avec:
 npm run tenant:new -- --slug=client-a --name="Client A" --domain=client-a.hanilink.app --supabase-url=https://client-a.supabase.co --publishable-key=sb_publishable_xxx
 ```
 
+Et generer un payload complet de provisioning client avec:
+
+```bash
+npm run tenant:provision -- --slug=client-a --name="Client A" --owner-email=owner@client-a.com --domain=client-a.hanilink.app --supabase-url=https://client-a.supabase.co --publishable-key=sb_publishable_xxx --project-ref=abc123
+```
+
 ## Web
 
 ```bash
@@ -149,3 +155,5 @@ Pour creer un nouveau client avec sa propre base Supabase:
 
 - schema applicatif client: `supabase/templates/client-app-schema.sql`
 - guide pas a pas: `docs/multi-tenant-client-onboarding.md`
+- schema master SaaS: `supabase/templates/master-saas-schema.sql`
+- ops master SaaS: `docs/saas-master-ops.md`
