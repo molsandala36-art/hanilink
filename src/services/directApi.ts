@@ -1,6 +1,6 @@
 import type { User } from '@supabase/supabase-js';
 import { isSupabaseConfigured, isSupabaseFunctionsBaseUrl, supabasePublishableKey } from '../lib/backend';
-import { AppUser, getCurrentSupabaseUserProfile, supabase } from './supabase';
+import { AppUser, getCurrentSupabaseUserProfile, getStoredSupabaseSession, supabase } from './supabase';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
@@ -54,12 +54,7 @@ const ensureSupabase = () => {
 
 const invokeSupabaseFunction = async <T>(name: string, body: JsonRecord = {}) => {
   const client = ensureSupabase();
-  const { data: sessionData, error: sessionError } = await client.auth.getSession();
-  if (sessionError) {
-    throw createApiError('Session Supabase introuvable. Reconnecte-toi.', 401);
-  }
-
-  const accessToken = sessionData.session?.access_token;
+  const accessToken = (await getStoredSupabaseSession())?.access_token;
   if (!accessToken) {
     throw createApiError('Session Supabase introuvable. Reconnecte-toi.', 401);
   }
@@ -194,12 +189,7 @@ const getCurrentAuthUser = async (): Promise<User> => {
 
   authUserPromise = (async () => {
     const client = ensureSupabase();
-    const { data: sessionData, error: sessionError } = await client.auth.getSession();
-    if (sessionError) {
-      throw createApiError('Session Supabase introuvable. Reconnecte-toi.', 401);
-    }
-
-    const sessionUser = sessionData.session?.user;
+    const sessionUser = (await getStoredSupabaseSession())?.user;
     if (sessionUser) {
       cachedAuthUser = sessionUser;
       return sessionUser;

@@ -22,7 +22,7 @@ import Layout from './components/Layout';
 import { getDeviceIdentity } from './lib/hwid';
 import { getBackendSetupIssue, isLicenseEnforcementEnabled, isSupabaseConfigured } from './lib/backend';
 import api from './services/api';
-import { getCurrentSupabaseUserProfile, getStoredSupabaseSession, signOutFromSupabase, supabase } from './services/supabase';
+import { getCurrentSupabaseUserProfile, getStoredSupabaseSession, setCachedSupabaseSession, signOutFromSupabase, supabase } from './services/supabase';
 
 const ProtectedRoute = ({ children, roles }: { children: React.ReactNode, roles: string[] }) => {
   const user = JSON.parse(localStorage.getItem('user') || '{}');
@@ -130,6 +130,7 @@ function App() {
       try {
         const session = await getStoredSupabaseSession();
         if (session?.user) {
+          setCachedSupabaseSession(session);
           localStorage.setItem('token', session.access_token);
           const profile = await getCurrentSupabaseUserProfile(session.user);
           localStorage.setItem('user', JSON.stringify(profile));
@@ -150,6 +151,7 @@ function App() {
     void restoreSupabaseSession();
 
     const { data: listener } = supabase!.auth.onAuthStateChange(async (_event, session) => {
+      setCachedSupabaseSession(session);
       if (session?.user) {
         localStorage.setItem('token', session.access_token);
         try {

@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import type { LockFunc } from '@supabase/auth-js';
 import type { Session, User } from '@supabase/supabase-js';
 import { isSupabaseConfigured, supabasePublishableKey, supabaseUrl } from '../lib/backend';
 
@@ -34,14 +35,46 @@ export interface AppUser {
   createdAt: string;
 }
 
+const browserLockQueue = new Map<string, Promise<unknown>>();
+
+const browserLock: LockFunc = async <R>(name: string, _acquireTimeout: number, fn: () => Promise<R>) => {
+  const previous = browserLockQueue.get(name) || Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+
+  browserLockQueue.set(
+    name,
+    previous
+      .catch(() => undefined)
+      .then(() => current)
+  );
+
+  await previous.catch(() => undefined);
+
+  try {
+    return await fn();
+  } finally {
+    release();
+    if (browserLockQueue.get(name) === current) {
+      browserLockQueue.delete(name);
+    }
+  }
+};
+
 export const supabase = isSupabaseConfigured
   ? createClient(supabaseUrl, supabasePublishableKey, {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
+        lock: browserLock,
       },
     })
   : null;
+
+let cachedSession: Session | null = null;
+let sessionPromise: Promise<Session | null> | null = null;
 
 const normalizeRole = (value: unknown): AppUserRole =>
   value === 'admin' ? 'admin' : 'employee';
@@ -132,7 +165,8 @@ const upsertAppUserProfile = async (
 
 export const getCurrentSupabaseUserProfile = async (user?: User): Promise<AppUser> => {
   const client = requireSupabase();
-  const authUser = user || (await client.auth.getUser()).data.user;
+  const session = await getStoredSupabaseSession();
+  const authUser = user || session?.user || (await client.auth.getUser()).data.user;
 
   if (!authUser) {
     throw new Error('Utilisateur Supabase introuvable.');
@@ -157,13 +191,39 @@ export const getCurrentSupabaseUserProfile = async (user?: User): Promise<AppUse
 
 export const getStoredSupabaseSession = async (): Promise<Session | null> => {
   const client = requireSupabase();
-  const { data, error } = await client.auth.getSession();
-
-  if (error) {
-    throw error;
+  if (cachedSession) {
+    return cachedSession;
   }
 
-  return data.session;
+  if (sessionPromise) {
+    return sessionPromise;
+  }
+
+  sessionPromise = (async () => {
+    const { data, error } = await client.auth.getSession();
+
+    if (error) {
+      throw error;
+    }
+
+    cachedSession = data.session;
+    return data.session;
+  })();
+
+  try {
+    return await sessionPromise;
+  } finally {
+    sessionPromise = null;
+  }
+};
+
+export const setCachedSupabaseSession = (session: Session | null) => {
+  cachedSession = session;
+};
+
+export const getSupabaseAccessToken = async () => {
+  const session = await getStoredSupabaseSession();
+  return session?.access_token || '';
 };
 
 export const signInWithSupabase = async (email: string, password: string) => {
@@ -235,4 +295,6 @@ export const signOutFromSupabase = async () => {
   if (error) {
     throw error;
   }
+
+  setCachedSupabaseSession(null);
 };
