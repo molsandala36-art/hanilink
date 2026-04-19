@@ -7,12 +7,14 @@ Application de gestion connectee a Supabase, partageant le meme frontend React p
 - Web avec Vite + Express
 - Desktop avec Electron
 - Mobile Android avec Capacitor
+- iPhone et iPad avec Capacitor + Xcode
 
 ## Prerequis
 
 - Node.js 20+
 - Un projet Supabase configure
 - Android Studio pour lancer ou builder Android
+- Un Mac avec Xcode pour builder iPhone/iPad
 
 ## Variables d'environnement
 
@@ -66,6 +68,25 @@ Ouvrir ensuite le projet Android:
 npm run mobile:open:android
 ```
 
+## iPhone et iPad
+
+Le projet iOS est deja genere dans `ios/`, mais la compilation doit se faire sur Mac.
+
+Depuis un Mac:
+
+```bash
+npm install
+npm run mobile:sync:ios
+npm run mobile:open:ios
+```
+
+Ensuite dans Xcode:
+
+- ouvre `ios/App/App.xcworkspace`
+- choisis un simulateur iPhone ou iPad
+- ou configure ton compte Apple Developer pour installer sur appareil reel
+- pour distribution, archive l'app puis exporte vers TestFlight ou App Store Connect
+
 ## Structure utile
 
 - `src/`: interface commune web/mobile/desktop
@@ -74,6 +95,8 @@ npm run mobile:open:android
 - `server.ts`: serveur local web et desktop
 - `electron/main.cjs`: shell desktop
 - `capacitor.config.ts`: shell mobile
+- `android/`: projet Android natif
+- `ios/`: projet iPhone/iPad natif
 
 ## Notes
 

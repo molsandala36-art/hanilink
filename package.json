@@ -19,12 +19,16 @@
     "mobile:copy": "npm run build && npx cap copy",
     "mobile:sync": "npm run build && npx cap sync android",
     "mobile:android": "npm run mobile:sync",
-    "mobile:open:android": "npx cap open android"
+    "mobile:open:android": "npx cap open android",
+    "mobile:sync:ios": "npm run build && npx cap sync ios",
+    "mobile:ios": "npm run mobile:sync:ios",
+    "mobile:open:ios": "npx cap open ios"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.1",
     "@capacitor/cli": "^8.3.1",
     "@capacitor/core": "^8.3.1",
+    "@capacitor/ios": "^8.3.1",
     "@supabase/supabase-js": "^2.103.3",
     "axios": "^1.14.0",
     "bcryptjs": "^3.0.3",
