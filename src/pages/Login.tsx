@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Store, Loader2 } from 'lucide-react';
 import api from '../services/api';
+import { getBackendSetupIssue, isSupabaseConfigured } from '../lib/backend';
+import { signInWithSupabase } from '../services/supabase';
 
 interface LoginProps {
   onLogin: (token: string, user: any) => void;
@@ -12,14 +14,20 @@ const Login = ({ onLogin }: LoginProps) => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const backendSetupIssue = getBackendSetupIssue();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
     try {
-      const res = await api.post('/auth/login', { email, password });
-      onLogin(res.data.token, res.data.user);
+      if (isSupabaseConfigured) {
+        const result = await signInWithSupabase(email, password);
+        onLogin(result.token, result.user);
+      } else {
+        const res = await api.post('/auth/login', { email, password });
+        onLogin(res.data.token, res.data.user);
+      }
     } catch (err: any) {
       setError(err.response?.data?.message || 'Identifiants invalides');
     } finally {
@@ -39,6 +47,11 @@ const Login = ({ onLogin }: LoginProps) => {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {backendSetupIssue && (
+            <div className="bg-amber-50 text-amber-800 p-3 rounded-lg text-sm font-medium border border-amber-200">
+              {backendSetupIssue}
+            </div>
+          )}
           {error && (
             <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-3 rounded-lg text-sm font-medium">
               {error}

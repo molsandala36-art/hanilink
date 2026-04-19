@@ -15,6 +15,7 @@
     "dist:desktop": "npm run build && npm run build:server && electron-builder --win --x64"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.103.3",
     "axios": "^1.14.0",
     "bcryptjs": "^3.0.3",
     "call-bind-apply-helpers": "^1.0.2",

@@ -20,7 +20,9 @@ import AdminLicensing from './pages/AdminLicensing';
 import ActivationScreen from './pages/ActivationScreen';
 import Layout from './components/Layout';
 import { getHWID } from './lib/hwid';
+import { getBackendSetupIssue, isSupabaseConfigured } from './lib/backend';
 import api from './services/api';
+import { getStoredSupabaseSession, normalizeSupabaseUser, signOutFromSupabase, supabase } from './services/supabase';
 
 const ProtectedRoute = ({ children, roles }: { children: React.ReactNode, roles: string[] }) => {
   const user = JSON.parse(localStorage.getItem('user') || '{}');
@@ -33,12 +35,26 @@ const ProtectedRoute = ({ children, roles }: { children: React.ReactNode, roles:
 const LicenseGuard = ({ children }: { children: React.ReactNode }) => {
   const [isActivated, setIsActivated] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
+  const [setupError, setSetupError] = useState('');
 
   useEffect(() => {
+    if (isSupabaseConfigured) {
+      setIsActivated(true);
+      setLoading(false);
+      return;
+    }
+
     const checkLicense = async () => {
       const token = localStorage.getItem('token');
       if (!token) {
         setIsActivated(false);
+        setLoading(false);
+        return;
+      }
+
+      const backendSetupIssue = getBackendSetupIssue();
+      if (backendSetupIssue) {
+        setSetupError(backendSetupIssue);
         setLoading(false);
         return;
       }
@@ -58,6 +74,16 @@ const LicenseGuard = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-gray-50">Loading license...</div>;
+  if (setupError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
+        <div className="max-w-xl w-full rounded-2xl border border-amber-200 bg-amber-50 p-6 text-amber-900 shadow-sm">
+          <h1 className="text-xl font-bold">Configuration backend requise</h1>
+          <p className="mt-3 text-sm leading-6">{setupError}</p>
+        </div>
+      </div>
+    );
+  }
   if (!isActivated) return <ActivationScreen onActivated={() => setIsActivated(true)} />;
 
   return <>{children}</>;
@@ -65,6 +91,43 @@ const LicenseGuard = ({ children }: { children: React.ReactNode }) => {
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(!!localStorage.getItem('token'));
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) {
+      return;
+    }
+
+    const restoreSupabaseSession = async () => {
+      try {
+        const session = await getStoredSupabaseSession();
+        if (session?.user) {
+          localStorage.setItem('token', session.access_token);
+          localStorage.setItem('user', JSON.stringify(normalizeSupabaseUser(session.user)));
+          setIsAuthenticated(true);
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    };
+
+    void restoreSupabaseSession();
+
+    const { data: listener } = supabase!.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        localStorage.setItem('token', session.access_token);
+        localStorage.setItem('user', JSON.stringify(normalizeSupabaseUser(session.user)));
+        setIsAuthenticated(true);
+      } else {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        setIsAuthenticated(false);
+      }
+    });
+
+    return () => {
+      listener.subscription.unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     const handleStorageChange = () => {
@@ -80,7 +143,15 @@ function App() {
     setIsAuthenticated(true);
   };
 
-  const logout = () => {
+  const logout = async () => {
+    if (isSupabaseConfigured) {
+      try {
+        await signOutFromSupabase();
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     localStorage.removeItem('hani_license_active');

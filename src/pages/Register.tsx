@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Store, Loader2 } from 'lucide-react';
 import api from '../services/api';
+import { getBackendSetupIssue, isSupabaseConfigured } from '../lib/backend';
+import { signUpWithSupabase } from '../services/supabase';
 
 interface RegisterProps {
   onLogin: (token: string, user: any) => void;
@@ -16,14 +18,26 @@ const Register = ({ onLogin }: RegisterProps) => {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const backendSetupIssue = getBackendSetupIssue();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
+    setSuccess('');
     try {
-      const res = await api.post('/auth/register', formData);
-      onLogin(res.data.token, res.data.user);
+      if (isSupabaseConfigured) {
+        const result = await signUpWithSupabase(formData);
+        if (result.needsEmailConfirmation || !result.token || !result.user) {
+          setSuccess("Compte cree. Confirme ton email Supabase puis connecte-toi.");
+        } else {
+          onLogin(result.token, result.user);
+        }
+      } else {
+        const res = await api.post('/auth/register', formData);
+        onLogin(res.data.token, res.data.user);
+      }
     } catch (err: any) {
       setError(err.response?.data?.message || 'Erreur lors de l\'inscription');
     } finally {
@@ -43,6 +57,16 @@ const Register = ({ onLogin }: RegisterProps) => {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {backendSetupIssue && (
+            <div className="bg-amber-50 text-amber-800 p-3 rounded-lg text-sm font-medium border border-amber-200">
+              {backendSetupIssue}
+            </div>
+          )}
+          {success && (
+            <div className="bg-green-50 text-green-800 p-3 rounded-lg text-sm font-medium border border-green-200">
+              {success}
+            </div>
+          )}
           {error && (
             <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-3 rounded-lg text-sm font-medium">
               {error}
