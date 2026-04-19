@@ -395,7 +395,7 @@ const POS = () => {
       </div>
 
       {/* Cart / Checkout */}
-      <div className="w-full xl:w-[26rem] xl:max-w-[34vw] shrink-0 flex flex-col min-h-[24rem] xl:min-h-0 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
+      <div className="w-full xl:w-[26rem] xl:max-w-[34vw] xl:h-full shrink-0 flex flex-col min-h-[24rem] xl:min-h-0 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
         <div className="p-6 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/50">
           <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
             <ShoppingCart className="w-5 h-5 text-orange-500" />
