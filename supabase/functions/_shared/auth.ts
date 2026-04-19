@@ -22,11 +22,23 @@ export const requireUser = async (authHeader?: string | null) => {
   }
 
   const { admin } = createClients(authHeader);
-  const { data, error } = await admin.auth.getUser(token);
-  if (error || !data.user) {
+  const response = await fetch(`${requireEnv('HANI_SUPABASE_URL')}/auth/v1/user`, {
+    headers: {
+      apikey: requireEnv('HANI_SUPABASE_ANON_KEY'),
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
     throw new Error('Unauthorized');
   }
-  return { admin, currentUser: data.user };
+
+  const currentUser = await response.json();
+  if (!currentUser?.id) {
+    throw new Error('Unauthorized');
+  }
+
+  return { admin, currentUser };
 };
 
 export const requireAdminUser = async (authHeader?: string | null) => {
