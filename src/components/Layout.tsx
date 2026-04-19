@@ -18,7 +18,8 @@ import {
   Settings,
   Truck,
   ClipboardList,
-  Wallet
+  Wallet,
+  Layers3
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { cn } from '../lib/utils';
@@ -75,6 +76,7 @@ const Layout = ({ onLogout }: LayoutProps) => {
     { name: t.pos, href: '/pos', icon: ShoppingCart, roles: ['admin', 'employee'] },
     { name: t.sales, href: '/sales', icon: History, roles: ['admin', 'employee'] },
     { name: t.ai_insights, href: '/ai-insights', icon: Brain, roles: ['admin'] },
+    { name: 'SaaS Clients', href: '/saas-tenants', icon: Layers3, roles: ['admin'] },
     { name: t.settings, href: '/settings', icon: Settings, roles: ['admin'] },
     { name: t.users, href: '/users', icon: Users, roles: ['admin'] },
   ];

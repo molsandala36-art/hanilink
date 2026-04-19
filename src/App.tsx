@@ -18,6 +18,7 @@ import Expenses from './pages/Expenses';
 import BusinessDocuments from './pages/BusinessDocuments';
 import AdminLicensing from './pages/AdminLicensing';
 import ActivationScreen from './pages/ActivationScreen';
+import SaasTenants from './pages/SaasTenants';
 import Layout from './components/Layout';
 import { getDeviceIdentity } from './lib/hwid';
 import { getBackendSetupIssue, isLicenseEnforcementEnabled, isSupabaseConfigured } from './lib/backend';
@@ -257,6 +258,11 @@ function App() {
             <Route path="ai-insights" element={
               <ProtectedRoute roles={['admin']}>
                 <AIInsights />
+              </ProtectedRoute>
+            } />
+            <Route path="saas-tenants" element={
+              <ProtectedRoute roles={['admin']}>
+                <SaasTenants />
               </ProtectedRoute>
             } />
             <Route path="settings" element={
