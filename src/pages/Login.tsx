@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { Store, Loader2 } from 'lucide-react';
 import api from '../services/api';
 import { getBackendSetupIssue, isSupabaseConfigured } from '../lib/backend';
+import TenantField from '../components/TenantField';
+import { getStoredTenantSlug, setPreferredTenantSlug } from '../lib/tenant';
 import { signInWithSupabase } from '../services/supabase';
 
 interface LoginProps {
@@ -12,6 +14,7 @@ interface LoginProps {
 const Login = ({ onLogin }: LoginProps) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [tenantSlug, setTenantSlug] = useState(getStoredTenantSlug());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const backendSetupIssue = getBackendSetupIssue();
@@ -21,7 +24,8 @@ const Login = ({ onLogin }: LoginProps) => {
     setLoading(true);
     setError('');
     try {
-      if (isSupabaseConfigured) {
+      setPreferredTenantSlug(tenantSlug);
+      if (isSupabaseConfigured()) {
         const result = await signInWithSupabase(email, password);
         onLogin(result.token, result.user);
       } else {
@@ -57,6 +61,7 @@ const Login = ({ onLogin }: LoginProps) => {
               {error}
             </div>
           )}
+          <TenantField value={tenantSlug} onChange={setTenantSlug} />
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
             <input

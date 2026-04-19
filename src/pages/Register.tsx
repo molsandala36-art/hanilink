@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { Store, Loader2 } from 'lucide-react';
 import api from '../services/api';
 import { getBackendSetupIssue, isSupabaseConfigured } from '../lib/backend';
+import TenantField from '../components/TenantField';
+import { getStoredTenantSlug, setPreferredTenantSlug } from '../lib/tenant';
 import { signUpWithSupabase } from '../services/supabase';
 
 interface RegisterProps {
@@ -16,6 +18,7 @@ const Register = ({ onLogin }: RegisterProps) => {
     password: '',
     shopName: ''
   });
+  const [tenantSlug, setTenantSlug] = useState(getStoredTenantSlug());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -27,7 +30,8 @@ const Register = ({ onLogin }: RegisterProps) => {
     setError('');
     setSuccess('');
     try {
-      if (isSupabaseConfigured) {
+      setPreferredTenantSlug(tenantSlug);
+      if (isSupabaseConfigured()) {
         const result = await signUpWithSupabase(formData);
         if (result.needsEmailConfirmation || !result.token || !result.user) {
           setSuccess("Compte cree. Confirme ton email Supabase puis connecte-toi.");
@@ -72,6 +76,7 @@ const Register = ({ onLogin }: RegisterProps) => {
               {error}
             </div>
           )}
+          <TenantField value={tenantSlug} onChange={setTenantSlug} />
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Nom complet</label>
             <input

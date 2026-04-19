@@ -22,7 +22,7 @@ import Layout from './components/Layout';
 import { getDeviceIdentity } from './lib/hwid';
 import { getBackendSetupIssue, isLicenseEnforcementEnabled, isSupabaseConfigured } from './lib/backend';
 import api from './services/api';
-import { getCurrentSupabaseUserProfile, getStoredSupabaseSession, setCachedSupabaseSession, signOutFromSupabase, supabase } from './services/supabase';
+import { getCurrentSupabaseUserProfile, getStoredSupabaseSession, getSupabaseClient, setCachedSupabaseSession, signOutFromSupabase } from './services/supabase';
 
 const ProtectedRoute = ({ children, roles }: { children: React.ReactNode, roles: string[] }) => {
   const user = JSON.parse(localStorage.getItem('user') || '{}');
@@ -122,7 +122,7 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(!!localStorage.getItem('token'));
 
   useEffect(() => {
-    if (!isSupabaseConfigured) {
+    if (!isSupabaseConfigured()) {
       return;
     }
 
@@ -150,7 +150,12 @@ function App() {
 
     void restoreSupabaseSession();
 
-    const { data: listener } = supabase!.auth.onAuthStateChange(async (_event, session) => {
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      return;
+    }
+
+    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setCachedSupabaseSession(session);
       if (session?.user) {
         localStorage.setItem('token', session.access_token);
@@ -193,7 +198,7 @@ function App() {
     localStorage.removeItem('hani_license_active');
     setIsAuthenticated(false);
 
-    if (isSupabaseConfigured) {
+    if (isSupabaseConfigured()) {
       try {
         await signOutFromSupabase();
       } catch (err) {

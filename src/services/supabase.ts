@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import type { LockFunc } from '@supabase/auth-js';
-import type { Session, User } from '@supabase/supabase-js';
-import { isSupabaseConfigured, supabasePublishableKey, supabaseUrl } from '../lib/backend';
+import type { Session, SupabaseClient, User } from '@supabase/supabase-js';
+import { getActiveTenantConfig, getSupabasePublishableKey, getSupabaseUrl, isSupabaseConfigured } from '../lib/backend';
 
 type AppUserRole = 'admin' | 'employee';
 
@@ -63,18 +63,9 @@ const browserLock: LockFunc = async <R>(name: string, _acquireTimeout: number, f
   }
 };
 
-export const supabase = isSupabaseConfigured
-  ? createClient(supabaseUrl, supabasePublishableKey, {
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        lock: browserLock,
-      },
-    })
-  : null;
-
-let cachedSession: Session | null = null;
-let sessionPromise: Promise<Session | null> | null = null;
+const supabaseClients = new Map<string, SupabaseClient>();
+const sessionCache = new Map<string, Session | null>();
+const sessionPromiseCache = new Map<string, Promise<Session | null>>();
 
 const normalizeRole = (value: unknown): AppUserRole =>
   value === 'admin' ? 'admin' : 'employee';
@@ -114,12 +105,42 @@ export const normalizeSupabaseUser = (user: User): AppUser => {
   };
 };
 
+const getTenantSessionKey = () => getActiveTenantConfig()?.slug || 'default';
+
+export const getSupabaseClient = () => {
+  if (!isSupabaseConfigured()) {
+    return null;
+  }
+
+  const tenant = getActiveTenantConfig();
+  const tenantKey = tenant?.slug || 'default';
+  const existingClient = supabaseClients.get(tenantKey);
+  if (existingClient) {
+    return existingClient;
+  }
+
+  const client = createClient(getSupabaseUrl(), getSupabasePublishableKey(), {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      lock: browserLock,
+      storageKey: `hani-sb-${tenantKey}`,
+    },
+  });
+
+  supabaseClients.set(tenantKey, client);
+  return client;
+};
+
+export const supabase = getSupabaseClient();
+
 const requireSupabase = () => {
-  if (!supabase) {
+  const client = getSupabaseClient();
+  if (!client) {
     throw new Error("L'authentification Supabase n'est pas configuree.");
   }
 
-  return supabase;
+  return client;
 };
 
 const upsertAppUserProfile = async (
@@ -191,34 +212,39 @@ export const getCurrentSupabaseUserProfile = async (user?: User): Promise<AppUse
 
 export const getStoredSupabaseSession = async (): Promise<Session | null> => {
   const client = requireSupabase();
+  const sessionKey = getTenantSessionKey();
+  const cachedSession = sessionCache.get(sessionKey);
   if (cachedSession) {
     return cachedSession;
   }
 
-  if (sessionPromise) {
-    return sessionPromise;
+  const existingPromise = sessionPromiseCache.get(sessionKey);
+  if (existingPromise) {
+    return existingPromise;
   }
 
-  sessionPromise = (async () => {
+  const sessionPromise = (async () => {
     const { data, error } = await client.auth.getSession();
 
     if (error) {
       throw error;
     }
 
-    cachedSession = data.session;
+    sessionCache.set(sessionKey, data.session);
     return data.session;
   })();
+
+  sessionPromiseCache.set(sessionKey, sessionPromise);
 
   try {
     return await sessionPromise;
   } finally {
-    sessionPromise = null;
+    sessionPromiseCache.delete(sessionKey);
   }
 };
 
 export const setCachedSupabaseSession = (session: Session | null) => {
-  cachedSession = session;
+  sessionCache.set(getTenantSessionKey(), session);
 };
 
 export const getSupabaseAccessToken = async () => {
@@ -287,11 +313,12 @@ export const signUpWithSupabase = async (payload: {
 };
 
 export const signOutFromSupabase = async () => {
-  if (!supabase) {
+  const client = getSupabaseClient();
+  if (!client) {
     return;
   }
 
-  const { error } = await supabase.auth.signOut({ scope: 'local' });
+  const { error } = await client.auth.signOut({ scope: 'local' });
   if (error) {
     throw error;
   }

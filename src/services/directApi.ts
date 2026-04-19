@@ -1,6 +1,6 @@
 import type { User } from '@supabase/supabase-js';
-import { isSupabaseConfigured, isSupabaseFunctionsBaseUrl, supabasePublishableKey, supabaseUrl } from '../lib/backend';
-import { AppUser, getCurrentSupabaseUserProfile, getStoredSupabaseSession, supabase } from './supabase';
+import { getSupabasePublishableKey, getSupabaseUrl, isSupabaseConfigured, isSupabaseFunctionsBaseUrl } from '../lib/backend';
+import { AppUser, getCurrentSupabaseUserProfile, getStoredSupabaseSession, getSupabaseClient } from './supabase';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
@@ -46,10 +46,11 @@ let cachedAuthUser: User | null = null;
 let authUserPromise: Promise<User> | null = null;
 
 const ensureSupabase = () => {
-  if (!isSupabaseConfigured || !supabase) {
+  const client = getSupabaseClient();
+  if (!isSupabaseConfigured() || !client) {
     throw createApiError("Supabase n'est pas configure pour cette application.");
   }
-  return supabase;
+  return client;
 };
 
 const invokeSupabaseFunction = async <T>(name: string, body: JsonRecord = {}) => {
@@ -59,11 +60,11 @@ const invokeSupabaseFunction = async <T>(name: string, body: JsonRecord = {}) =>
     throw createApiError('Session Supabase introuvable. Reconnecte-toi.', 401);
   }
 
-  const response = await fetch(`${supabaseUrl}/functions/v1/${name}`, {
+  const response = await fetch(`${getSupabaseUrl()}/functions/v1/${name}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      apikey: supabasePublishableKey,
+      apikey: getSupabasePublishableKey(),
       Authorization: `Bearer ${accessToken}`,
     },
     body: JSON.stringify(body),
