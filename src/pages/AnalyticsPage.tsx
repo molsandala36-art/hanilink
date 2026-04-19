@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../services/api';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   LineChart, Line, PieChart, Pie, Cell
@@ -33,10 +33,7 @@ const AnalyticsPage: React.FC = () => {
   useEffect(() => {
     const fetchAnalytics = async () => {
       try {
-        const token = localStorage.getItem('token');
-        const response = await axios.get('/api/analytics', {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        const response = await api.get('/analytics');
         setData(response.data);
       } catch (err) {
         setError('Failed to load analytics data');
