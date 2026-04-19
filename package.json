@@ -6,15 +6,25 @@
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "npx tsx server.ts",
+    "dev:web": "npm run dev",
     "build": "vite build",
     "build:server": "tsc -p tsconfig.server.json && node -e \"require('fs').writeFileSync('build-server/package.json', JSON.stringify({type:'commonjs'}))\"",
     "preview": "vite preview",
-    "clean": "rm -rf dist",
+    "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true }); require('fs').rmSync('build-server', { recursive: true, force: true })\"",
     "lint": "tsc --noEmit",
     "electron": "electron electron/main.cjs",
-    "dist:desktop": "npm run build && npm run build:server && electron-builder --win --x64"
+    "desktop:dev": "electron electron/main.cjs",
+    "desktop:build": "npm run build && npm run build:server && electron-builder --win --x64",
+    "dist:desktop": "npm run desktop:build",
+    "mobile:copy": "npm run build && npx cap copy",
+    "mobile:sync": "npm run build && npx cap sync android",
+    "mobile:android": "npm run mobile:sync",
+    "mobile:open:android": "npx cap open android"
   },
   "dependencies": {
+    "@capacitor/android": "^8.3.1",
+    "@capacitor/cli": "^8.3.1",
+    "@capacitor/core": "^8.3.1",
     "@supabase/supabase-js": "^2.103.3",
     "axios": "^1.14.0",
     "bcryptjs": "^3.0.3",
@@ -85,6 +95,7 @@
       "!**/.cache/**/*"
     ],
     "win": {
+      "icon": "public/icon.ico",
       "target": [
         {
           "target": "nsis",

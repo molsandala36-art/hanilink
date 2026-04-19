@@ -109,7 +109,7 @@ function createWindow() {
 
   const startUrl = app.isPackaged
     ? `http://127.0.0.1:${DESKTOP_SERVER_PORT}`
-    : 'http://localhost:3000';
+    : 'http://localhost:5000';
 
   writeDebugLog(`Loading URL ${startUrl}`);
   win.loadURL(startUrl);

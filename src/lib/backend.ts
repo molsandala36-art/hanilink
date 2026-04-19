@@ -30,6 +30,10 @@ export const getBackendSetupIssue = () => {
     return "VITE_SUPABASE_URL est defini, mais VITE_SUPABASE_PUBLISHABLE_KEY manque encore pour activer l'authentification Supabase.";
   }
 
+  if (isSupabaseConfigured) {
+    return null;
+  }
+
   if (isBareSupabaseProjectUrl) {
     return "VITE_API_BASE_URL pointe vers la racine Supabase. Utilise plutot l'URL des Edge Functions, par exemple https://<project-ref>.supabase.co/functions/v1.";
   }

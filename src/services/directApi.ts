@@ -69,7 +69,7 @@ const parseId = (value: any) => {
 
 const pickCreatedAt = (row: JsonRecord) => row.createdAt || row.created_at || new Date().toISOString();
 
-const normalizeRecord = (row: JsonRecord) => ({
+const normalizeRecord = (row: JsonRecord): JsonRecord => ({
   ...row,
   _id: parseId(row.id || row._id),
   createdAt: pickCreatedAt(row),
@@ -494,7 +494,7 @@ const listSales = async (): Promise<ApiResponse<any[]>> => {
 const createSale = async (payload: JsonRecord) => {
   const row = await saleToRow(payload);
   for (const item of row.items) {
-    const productId = parseId(item.productId ?? item.product_id);
+    const productId = parseId(item.product_id);
     const productRows = await withTable('products', 'products', (tableName) =>
       ensureSupabase().from(tableName).select('*').eq('id', productId).limit(1)
     );

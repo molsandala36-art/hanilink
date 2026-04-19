@@ -1,25 +1,82 @@
-<<<<<<< HEAD
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# HaniLink
 
-# Run and deploy your AI Studio app
+Application de gestion connectee a Supabase, partageant le meme frontend React pour le web, le desktop et le mobile.
 
-This contains everything you need to run your app locally.
+## Plateformes
 
-View your app in AI Studio: https://ai.studio/apps/95634865-12df-463f-bf49-1a791e7dce48
+- Web avec Vite + Express
+- Desktop avec Electron
+- Mobile Android avec Capacitor
 
-## Run Locally
+## Prerequis
 
-**Prerequisites:**  Node.js
+- Node.js 20+
+- Un projet Supabase configure
+- Android Studio pour lancer ou builder Android
 
+## Variables d'environnement
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
-=======
-# hanilink
-application de gestion des entreprise 
->>>>>>> eb5b16a82e52742476e53ab3682f31c5cf036e82
+Cree un fichier `.env.local` avec:
+
+```env
+VITE_SUPABASE_URL=https://fsepdkctrlsrysbvnnmk.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
+```
+
+## Web
+
+```bash
+npm install
+npm run dev
+```
+
+L'application locale tourne sur `http://localhost:5000`.
+
+## Desktop
+
+En developpement, lance le web puis Electron dans un second terminal:
+
+```bash
+npm run dev
+```
+
+```bash
+npm run desktop:dev
+```
+
+Pour generer l'application Windows:
+
+```bash
+npm run desktop:build
+```
+
+Le build sort dans `release/`.
+
+## Mobile Android
+
+Compiler le frontend puis synchroniser Capacitor:
+
+```bash
+npm run mobile:sync
+```
+
+Ouvrir ensuite le projet Android:
+
+```bash
+npm run mobile:open:android
+```
+
+## Structure utile
+
+- `src/`: interface commune web/mobile/desktop
+- `src/services/supabase.ts`: authentification et profil Supabase
+- `src/services/directApi.ts`: acces direct aux tables Supabase
+- `server.ts`: serveur local web et desktop
+- `electron/main.cjs`: shell desktop
+- `capacitor.config.ts`: shell mobile
+
+## Notes
+
+- Si Supabase est configure, l'app privilegie cette integration sur les anciens endpoints backend
+- Le mobile et le web partagent exactement le meme code React
+- Le desktop garde le shell Electron existant avec le serveur embarque pour le build final
