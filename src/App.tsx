@@ -44,9 +44,18 @@ const LicenseGuard = ({ children }: { children: React.ReactNode }) => {
       return;
     }
 
+    let isMounted = true;
+    const timeoutId = window.setTimeout(() => {
+      if (!isMounted) return;
+      setSetupError("La verification de licence prend trop de temps. Reessaie dans quelques secondes.");
+      setIsActivated(false);
+      setLoading(false);
+    }, 12000);
+
     const checkLicense = async () => {
       const token = localStorage.getItem('token');
       if (!token) {
+        window.clearTimeout(timeoutId);
         setIsActivated(false);
         setLoading(false);
         return;
@@ -54,6 +63,7 @@ const LicenseGuard = ({ children }: { children: React.ReactNode }) => {
 
       const backendSetupIssue = getBackendSetupIssue();
       if (backendSetupIssue) {
+        window.clearTimeout(timeoutId);
         setSetupError(backendSetupIssue);
         setLoading(false);
         return;
@@ -62,15 +72,26 @@ const LicenseGuard = ({ children }: { children: React.ReactNode }) => {
       try {
         const identity = await getDeviceIdentity();
         const res = await api.post('/license/verify', identity);
+        if (!isMounted) return;
+        window.clearTimeout(timeoutId);
         setIsActivated(res.data.active);
-      } catch (err) {
+      } catch (err: any) {
+        if (!isMounted) return;
+        window.clearTimeout(timeoutId);
+        setSetupError(err?.response?.data?.message || err?.message || 'Verification de licence impossible pour le moment.');
         setIsActivated(false);
       } finally {
+        if (!isMounted) return;
         setLoading(false);
       }
     };
 
-    checkLicense();
+    void checkLicense();
+
+    return () => {
+      isMounted = false;
+      window.clearTimeout(timeoutId);
+    };
   }, []);
 
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-gray-50">Loading license...</div>;
