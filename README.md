@@ -25,6 +25,27 @@ VITE_SUPABASE_URL=https://fsepdkctrlsrysbvnnmk.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
 ```
 
+Pour plusieurs clients avec une base Supabase separee chacun:
+
+```env
+VITE_TENANT_CONFIGS={
+  "client-a": {
+    "name": "Client A",
+    "domains": ["client-a.hanilink.app"],
+    "supabaseUrl": "https://client-a.supabase.co",
+    "supabasePublishableKey": "sb_publishable_xxx",
+    "apiBaseUrl": "https://client-a.supabase.co/functions/v1"
+  }
+}
+VITE_DEFAULT_TENANT=client-a
+```
+
+Tu peux aussi generer une entree client avec:
+
+```bash
+npm run tenant:new -- --slug=client-a --name="Client A" --domain=client-a.hanilink.app --supabase-url=https://client-a.supabase.co --publishable-key=sb_publishable_xxx
+```
+
 ## Web
 
 ```bash
@@ -90,6 +111,7 @@ Ensuite dans Xcode:
 ## Structure utile
 
 - `src/`: interface commune web/mobile/desktop
+- `src/lib/tenant.ts`: resolution du client actif et config multi-tenant
 - `src/services/supabase.ts`: authentification et profil Supabase
 - `src/services/directApi.ts`: acces direct aux tables Supabase
 - `server.ts`: serveur local web et desktop
@@ -120,3 +142,10 @@ Pour activer la verification de licence dans l'app:
 3. mets `VITE_ENABLE_LICENSE_ENFORCEMENT=true`
 
 Le meme systeme couvre web, desktop, Android, iPhone et iPad via `device_id` + `platform`.
+
+## Onboarding Client
+
+Pour creer un nouveau client avec sa propre base Supabase:
+
+- schema applicatif client: `supabase/templates/client-app-schema.sql`
+- guide pas a pas: `docs/multi-tenant-client-onboarding.md`
