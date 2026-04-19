@@ -780,7 +780,13 @@ const listUsers = async () => {
 const updateUser = async (id: string, payload: JsonRecord) => {
   const authUser = await getCurrentAuthUser();
   if (authUser.id !== id) {
-    throw createApiError("La gestion d'autres utilisateurs n'est pas encore disponible en mode Supabase direct.", 501);
+    return {
+      data: await invokeSupabaseFunction('admin-users', {
+        action: 'update',
+        id,
+        ...payload,
+      }),
+    };
   }
 
   const row = {
@@ -814,20 +820,36 @@ const updateUser = async (id: string, payload: JsonRecord) => {
   };
 };
 
-const updateUserRole = async (id: string) => {
+const updateUserRole = async (id: string, payload?: JsonRecord) => {
   const authUser = await getCurrentAuthUser();
   if (authUser.id === id) throw createApiError('You cannot change your own role', 400);
-  throw createApiError("Le changement de role d'un autre utilisateur necessite une fonction admin Supabase.", 501);
+  return {
+    data: await invokeSupabaseFunction('admin-users', {
+      action: 'role',
+      id,
+      role: payload?.role,
+    }),
+  };
 };
 
 const deleteUser = async (id: string) => {
   const authUser = await getCurrentAuthUser();
   if (authUser.id === id) throw createApiError('You cannot delete your own account', 400);
-  throw createApiError("La suppression d'un autre utilisateur necessite une fonction admin Supabase.", 501);
+  return {
+    data: await invokeSupabaseFunction('admin-users', {
+      action: 'delete',
+      id,
+    }),
+  };
 };
 
-const registerAdditionalUser = async () => {
-  throw createApiError("La creation d'autres utilisateurs depuis le tableau de bord demande une fonction admin Supabase ou un backend securise.", 501);
+const registerAdditionalUser = async (payload: JsonRecord) => {
+  return {
+    data: await invokeSupabaseFunction('admin-users', {
+      action: 'create',
+      ...payload,
+    }),
+  };
 };
 
 const getSyncStatus = async () => ({
@@ -924,11 +946,13 @@ export const handleSupabaseApiRequest = async (
   if (method === 'GET' && cleanPath === '/analytics') return getAnalytics();
 
   if (method === 'GET' && cleanPath === '/users') return listUsers();
-  if (method === 'PUT' && /\/users\/[^/]+\/role$/.test(cleanPath)) return updateUserRole(cleanPath.split('/')[2]);
+  if (method === 'PUT' && /\/users\/[^/]+\/role$/.test(cleanPath)) {
+    return updateUserRole(cleanPath.split('/')[2], payload);
+  }
   if (method === 'PUT' && cleanPath.startsWith('/users/')) return updateUser(cleanPath.split('/')[2], payload);
   if (method === 'DELETE' && cleanPath.startsWith('/users/')) return deleteUser(cleanPath.split('/')[2]);
 
-  if (method === 'POST' && cleanPath === '/auth/register') return registerAdditionalUser();
+  if (method === 'POST' && cleanPath === '/auth/register') return registerAdditionalUser(payload);
 
   if (method === 'GET' && cleanPath === '/sync/status') return getSyncStatus();
   if (cleanPath.startsWith('/sync/')) return unsupportedSyncAction();
