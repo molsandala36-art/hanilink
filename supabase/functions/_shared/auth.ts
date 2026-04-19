@@ -7,9 +7,9 @@ export const requireEnv = (name: string) => {
 };
 
 export const createClients = (authHeader?: string | null) => {
-  const supabaseUrl = requireEnv('SUPABASE_URL');
-  const serviceRoleKey = requireEnv('SUPABASE_SERVICE_ROLE_KEY');
-  const anonKey = requireEnv('SUPABASE_ANON_KEY');
+  const supabaseUrl = requireEnv('HANI_SUPABASE_URL');
+  const serviceRoleKey = requireEnv('HANI_SUPABASE_SERVICE_ROLE_KEY');
+  const anonKey = requireEnv('HANI_SUPABASE_ANON_KEY');
 
   const admin = createClient(supabaseUrl, serviceRoleKey);
   const user = createClient(supabaseUrl, anonKey, {

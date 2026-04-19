@@ -18,7 +18,6 @@ import {
   Settings,
   Truck,
   ClipboardList,
-  ShieldCheck,
   Wallet
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
@@ -78,7 +77,6 @@ const Layout = ({ onLogout }: LayoutProps) => {
     { name: t.ai_insights, href: '/ai-insights', icon: Brain, roles: ['admin'] },
     { name: t.settings, href: '/settings', icon: Settings, roles: ['admin'] },
     { name: t.users, href: '/users', icon: Users, roles: ['admin'] },
-    { name: t.licensing, href: '/admin/licensing', icon: ShieldCheck, roles: ['admin'] },
   ];
 
   const filteredNavigation = navigation.filter(item => item.roles.includes(user.role || 'employee'));

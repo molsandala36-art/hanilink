@@ -47,9 +47,9 @@ supabase link --project-ref fsepdkctrlsrysbvnnmk
 Set required secrets:
 
 ```bash
-supabase secrets set SUPABASE_URL=https://fsepdkctrlsrysbvnnmk.supabase.co
-supabase secrets set SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
-supabase secrets set SUPABASE_SERVICE_ROLE_KEY=YOUR_SUPABASE_SERVICE_ROLE_KEY
+supabase secrets set HANI_SUPABASE_URL=https://fsepdkctrlsrysbvnnmk.supabase.co
+supabase secrets set HANI_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
+supabase secrets set HANI_SUPABASE_SERVICE_ROLE_KEY=YOUR_SUPABASE_SERVICE_ROLE_KEY
 ```
 
 Deploy the functions:
