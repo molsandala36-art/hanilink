@@ -54,7 +54,15 @@ const LicenseGuard = ({ children }: { children: React.ReactNode }) => {
 
     const checkLicense = async () => {
       const token = localStorage.getItem('token');
+      const hasLocalLicenseMarker = localStorage.getItem('hani_license_active') === 'true';
       if (!token) {
+        window.clearTimeout(timeoutId);
+        setIsActivated(false);
+        setLoading(false);
+        return;
+      }
+
+      if (!hasLocalLicenseMarker) {
         window.clearTimeout(timeoutId);
         setIsActivated(false);
         setLoading(false);
