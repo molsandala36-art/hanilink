@@ -45,6 +45,7 @@ const POS = () => {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [error, setError] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'cmi'>('cash');
   const [language, setLanguage] = useState<Language>(() => (localStorage.getItem('language') as Language) || 'fr');
   const [warning, setWarning] = useState<string | null>(null);
@@ -66,8 +67,10 @@ const POS = () => {
       try {
         const res = await api.get('/products');
         setProducts(res.data);
+        setError('');
       } catch (err) {
         console.error(err);
+        setError(language === 'ar' ? 'تعذر تحميل المنتجات' : 'Impossible de charger les produits');
       } finally {
         setLoading(false);
       }
@@ -286,6 +289,7 @@ const POS = () => {
 
     setSubmitting(true);
     try {
+      setError('');
       const res = await api.post('/sales', {
         items: cart.map(item => ({
           productId: item._id,
@@ -313,7 +317,11 @@ const POS = () => {
       setProducts(productsRes.data);
     } catch (err) {
       console.error(err);
-      alert('Erreur lors de la vente');
+      setError(
+        (err as any)?.response?.data?.message ||
+        (err as any)?.message ||
+        (language === 'ar' ? 'حدث خطأ أثناء البيع' : 'Erreur lors de la vente')
+      );
     } finally {
       setSubmitting(false);
     }
@@ -327,6 +335,12 @@ const POS = () => {
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{t.pos}</h1>
           <p className="text-gray-500 dark:text-gray-400">{language === 'ar' ? 'اختر المنتجات للبيع' : 'Sélectionnez les produits pour la vente'}</p>
         </div>
+
+        {error && (
+          <div className="mb-4 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-4 rounded-xl border border-red-100 dark:border-red-800">
+            {error}
+          </div>
+        )}
 
         <div className="relative mb-6">
           <Search className={cn("absolute top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5", language === 'ar' ? "right-3" : "left-3")} />

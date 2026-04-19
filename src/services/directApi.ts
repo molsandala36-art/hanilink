@@ -490,13 +490,14 @@ const listSales = async (): Promise<ApiResponse<any[]>> => {
 const createSale = async (payload: JsonRecord) => {
   const row = await saleToRow(payload);
   for (const item of row.items) {
+    const productId = parseId(item.productId ?? item.product_id);
     const productRows = await withTable('products', 'products', (tableName) =>
-      ensureSupabase().from(tableName).select('*').eq('id', item.productId).limit(1)
+      ensureSupabase().from(tableName).select('*').eq('id', productId).limit(1)
     );
     const product = asArray<JsonRecord>(productRows)[0];
-    if (!product) throw createApiError(`Produit introuvable: ${item.productId}`, 404);
+    if (!product) throw createApiError(`Produit introuvable: ${productId}`, 404);
     await withTable('products', 'products', (tableName) =>
-      ensureSupabase().from(tableName).update({ stock: Number(product.stock || 0) - Number(item.quantity || 0) }).eq('id', item.productId)
+      ensureSupabase().from(tableName).update({ stock: Number(product.stock || 0) - Number(item.quantity || 0) }).eq('id', productId)
     );
   }
   const data = await withTable('sales', 'sales', (tableName) => ensureSupabase().from(tableName).insert(row).select('*').single());
