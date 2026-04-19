@@ -296,6 +296,8 @@ const POS = () => {
           name: item.name,
           quantity: item.quantity,
           price: item.price,
+          purchasePrice: item.purchasePrice || 0,
+          supplierTva: item.supplierTva || 0,
           tvaRate: item.tvaRate || 20
         })),
         totalAmount: total,

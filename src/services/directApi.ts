@@ -263,6 +263,8 @@ const saleFromRow = (row: JsonRecord) => {
       name: item.name || '',
       quantity: Number(item.quantity || 0),
       price: Number(item.price || 0),
+      purchasePrice: Number(item.purchasePrice ?? item.purchase_price ?? 0),
+      supplierTva: Number(item.supplierTva ?? item.supplier_tva ?? 0),
       tvaRate: Number(item.tvaRate ?? item.tva_rate ?? 20),
     })),
     totalAmount: Number(normalized.totalAmount ?? normalized.total_amount ?? 0),
@@ -281,6 +283,8 @@ const saleToRow = async (payload: JsonRecord) => {
       name: item.name,
       quantity: Number(item.quantity || 0),
       price: Number(item.price || 0),
+      purchase_price: Number(item.purchasePrice ?? 0),
+      supplier_tva: Number(item.supplierTva ?? 0),
       tva_rate: Number(item.tvaRate ?? 20),
     })),
     total_amount: Number(payload.totalAmount || 0),
@@ -662,6 +666,20 @@ const getAnalytics = async () => {
   const totalSales = recentSales.length;
   const averageOrderValue = totalSales ? totalRevenue / totalSales : 0;
   const totalExpenses = recentExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+  const productPurchasePriceMap = new Map(
+    products.map((product) => [product._id, Number(product.purchasePrice || 0)])
+  );
+  const totalCostOfGoods = recentSales.reduce((sum, sale) => {
+    const saleCost = asArray<JsonRecord>(sale.items).reduce((itemSum, item) => {
+      const quantity = Number(item.quantity || 0);
+      const purchasePrice =
+        Number(item.purchasePrice ?? 0) ||
+        Number(productPurchasePriceMap.get(parseId(item.productId)) || 0);
+      return itemSum + purchasePrice * quantity;
+    }, 0);
+    return sum + saleCost;
+  }, 0);
+  const totalOperationalCosts = totalExpenses + totalCostOfGoods;
   const trendMap = new Map<string, { _id: string; revenue: number; count: number }>();
   recentSales.filter((sale) => new Date(sale.createdAt || '').getTime() >= sevenDaysAgo.getTime()).forEach((sale) => {
     const key = new Date(sale.createdAt || '').toISOString().slice(0, 10);
@@ -686,7 +704,9 @@ const getAnalytics = async () => {
         totalSales,
         averageOrderValue,
         totalExpenses,
-        netProfit: totalRevenue - totalExpenses,
+        totalCostOfGoods,
+        totalOperationalCosts,
+        netProfit: totalRevenue - totalOperationalCosts,
       },
       dailyTrend: Array.from(trendMap.values()).sort((a, b) => a._id.localeCompare(b._id)),
       topProducts: Array.from(topProducts.values()).sort((a, b) => b.totalQuantity - a.totalQuantity).slice(0, 5),

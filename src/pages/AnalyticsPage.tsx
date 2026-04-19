@@ -16,6 +16,8 @@ interface AnalyticsData {
     totalSales: number;
     averageOrderValue: number;
     totalExpenses: number;
+    totalCostOfGoods?: number;
+    totalOperationalCosts?: number;
     netProfit: number;
   };
   dailyTrend: Array<{ _id: string; revenue: number; count: number }>;
@@ -69,7 +71,7 @@ const AnalyticsPage: React.FC = () => {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-6">
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -150,6 +152,27 @@ const AnalyticsPage: React.FC = () => {
           <h3 className="text-gray-500 text-sm font-medium">Total Expenses</h3>
           <p className="text-2xl font-bold text-gray-900 mt-1">
             ${data.summary.totalExpenses.toLocaleString()}
+          </p>
+        </motion.div>
+
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.35 }}
+          className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100"
+        >
+          <div className="flex items-center justify-between mb-4">
+            <div className="p-3 bg-rose-50 rounded-xl">
+              <ShoppingBag className="h-6 w-6 text-rose-600" />
+            </div>
+            <span className="flex items-center text-rose-600 text-sm font-medium">
+              <ArrowDownRight className="h-4 w-4 mr-1" />
+              Cost
+            </span>
+          </div>
+          <h3 className="text-gray-500 text-sm font-medium">Purchase Costs</h3>
+          <p className="text-2xl font-bold text-gray-900 mt-1">
+            ${(data.summary.totalCostOfGoods || 0).toLocaleString()}
           </p>
         </motion.div>
 
