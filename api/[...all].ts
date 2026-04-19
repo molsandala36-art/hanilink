@@ -1,22 +1,14 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { createApp, initializeServerResources } from "../server/app";
 
-let appPromise: Promise<(req: VercelRequest, res: VercelResponse) => unknown> | null = null;
-
-const getApp = async () => {
-  if (!appPromise) {
-    appPromise = (async () => {
-      const mod = await import("../server/app.ts");
-      await mod.initializeServerResources();
-      return mod.createApp();
-    })();
-  }
-
-  return appPromise;
-};
+const appPromise = (async () => {
+  await initializeServerResources();
+  return createApp();
+})();
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
-    const app = await getApp();
+    const app = await appPromise;
     return app(req, res);
   } catch (error) {
     console.error("Vercel API bootstrap failed:", error);
