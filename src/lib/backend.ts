@@ -1,6 +1,7 @@
 const rawApiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').trim();
 const rawSupabaseUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim();
 const rawSupabasePublishableKey = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '').trim();
+const rawLicenseEnforcement = (import.meta.env.VITE_ENABLE_LICENSE_ENFORCEMENT || '').trim();
 
 export const apiBaseUrl = rawApiBaseUrl.replace(/\/+$/, '');
 export const isExternalApiConfigured = apiBaseUrl.length > 0;
@@ -22,6 +23,7 @@ export const supabaseUrl = (
 export const supabasePublishableKey = rawSupabasePublishableKey;
 export const isSupabaseConfigured =
   supabaseUrl.length > 0 && supabasePublishableKey.length > 0;
+export const isLicenseEnforcementEnabled = /^(1|true|yes|on)$/i.test(rawLicenseEnforcement);
 
 export const getApiBaseUrl = () => apiBaseUrl || '/api';
 

@@ -19,8 +19,8 @@ import BusinessDocuments from './pages/BusinessDocuments';
 import AdminLicensing from './pages/AdminLicensing';
 import ActivationScreen from './pages/ActivationScreen';
 import Layout from './components/Layout';
-import { getHWID } from './lib/hwid';
-import { getBackendSetupIssue, isSupabaseConfigured } from './lib/backend';
+import { getDeviceIdentity } from './lib/hwid';
+import { getBackendSetupIssue, isLicenseEnforcementEnabled, isSupabaseConfigured } from './lib/backend';
 import api from './services/api';
 import { getCurrentSupabaseUserProfile, getStoredSupabaseSession, signOutFromSupabase, supabase } from './services/supabase';
 
@@ -38,7 +38,7 @@ const LicenseGuard = ({ children }: { children: React.ReactNode }) => {
   const [setupError, setSetupError] = useState('');
 
   useEffect(() => {
-    if (isSupabaseConfigured) {
+    if (!isLicenseEnforcementEnabled) {
       setIsActivated(true);
       setLoading(false);
       return;
@@ -60,8 +60,8 @@ const LicenseGuard = ({ children }: { children: React.ReactNode }) => {
       }
 
       try {
-        const hwid = await getHWID();
-        const res = await api.post('/license/verify', { hwid });
+        const identity = await getDeviceIdentity();
+        const res = await api.post('/license/verify', identity);
         setIsActivated(res.data.active);
       } catch (err) {
         setIsActivated(false);

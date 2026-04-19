@@ -103,3 +103,18 @@ Ensuite dans Xcode:
 - Si Supabase est configure, l'app privilegie cette integration sur les anciens endpoints backend
 - Le mobile et le web partagent exactement le meme code React
 - Le desktop garde le shell Electron existant avec le serveur embarque pour le build final
+
+## Licensing Supabase
+
+Le repo contient maintenant une base de licensing multi-plateforme:
+
+- migration SQL: `supabase/migrations/20260419_multiplatform_licensing.sql`
+- fonctions Edge: `supabase/functions/activate-license`, `verify-license`, `heartbeat-license`, `admin-licenses`
+
+Pour activer la verification de licence dans l'app:
+
+1. applique la migration dans Supabase
+2. deploie les fonctions Edge
+3. mets `VITE_ENABLE_LICENSE_ENFORCEMENT=true`
+
+Le meme systeme couvre web, desktop, Android, iPhone et iPad via `device_id` + `platform`.

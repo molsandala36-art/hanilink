@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { ShieldCheck, Key, Loader2, AlertCircle, CheckCircle2, Languages } from 'lucide-react';
-import { getHWID } from '../lib/hwid';
+import { getDeviceIdentity } from '../lib/hwid';
 import api from '../services/api';
 import { translations, Language } from '../lib/translations';
 
@@ -12,6 +12,8 @@ interface ActivationScreenProps {
 const ActivationScreen = ({ onActivated }: ActivationScreenProps) => {
   const [licenseKey, setLicenseKey] = useState('');
   const [hwid, setHwid] = useState('');
+  const [platform, setPlatform] = useState('');
+  const [deviceName, setDeviceName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -20,11 +22,13 @@ const ActivationScreen = ({ onActivated }: ActivationScreenProps) => {
   const t = translations[language];
 
   useEffect(() => {
-    const fetchHwid = async () => {
-      const id = await getHWID();
-      setHwid(id);
+    const fetchIdentity = async () => {
+      const identity = await getDeviceIdentity();
+      setHwid(identity.deviceId);
+      setPlatform(identity.platform);
+      setDeviceName(identity.deviceName);
     };
-    fetchHwid();
+    fetchIdentity();
   }, []);
 
   const handleActivate = async (e: React.FormEvent) => {
@@ -36,7 +40,9 @@ const ActivationScreen = ({ onActivated }: ActivationScreenProps) => {
       const trimmedKey = licenseKey.trim().toUpperCase();
       const res = await api.post('/license/activate', {
         key: trimmedKey,
-        hwid
+        deviceId: hwid,
+        platform,
+        deviceName,
       });
 
       if (res.data.success) {
@@ -117,6 +123,9 @@ const ActivationScreen = ({ onActivated }: ActivationScreenProps) => {
             </p>
             <p className="text-sm font-mono text-gray-900 dark:text-white break-all">
               {hwid || 'Generating...'}
+            </p>
+            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+              {platform ? `${platform} - ${deviceName}` : ''}
             </p>
           </div>
 

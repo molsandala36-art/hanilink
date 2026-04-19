@@ -1,17 +1,58 @@
-import { machineId } from 'node-machine-id';
+export type LicensePlatform = 'web' | 'desktop' | 'android' | 'ios';
+
+const STORAGE_KEY = 'hani_device_id';
+
+const randomId = () =>
+  'dev-' + Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 10);
+
+export const getDevicePlatform = (): LicensePlatform => {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+    return 'web';
+  }
+
+  const userAgent = navigator.userAgent.toLowerCase();
+  const isCapacitor = Boolean((window as any)?.Capacitor);
+  const isElectron = userAgent.includes('electron');
+  const isAndroid = userAgent.includes('android');
+  const isIos = /iphone|ipad|ipod/.test(userAgent);
+
+  if (isElectron) return 'desktop';
+  if (isCapacitor && isAndroid) return 'android';
+  if (isCapacitor && isIos) return 'ios';
+  return 'web';
+};
+
+export const getDeviceName = (): string => {
+  if (typeof navigator === 'undefined') {
+    return 'Unknown device';
+  }
+
+  const platform = getDevicePlatform();
+  const userAgent = navigator.userAgent;
+
+  if (platform === 'desktop') return 'Desktop app';
+  if (platform === 'android') return 'Android device';
+  if (platform === 'ios') return 'iPhone / iPad';
+  return userAgent.slice(0, 120);
+};
 
 export const getHWID = async (): Promise<string> => {
   try {
-    // In a browser environment, we might use a combination of browser fingerprints
-    // but since this is a desktop-oriented POS, node-machine-id is preferred if running in Electron.
-    // For this web demo, we'll use a persistent browser-based fingerprint.
-    let hwid = localStorage.getItem('hani_hwid');
-    if (!hwid) {
-      hwid = 'HWID-' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-      localStorage.setItem('hani_hwid', hwid);
+    const existing = localStorage.getItem(STORAGE_KEY);
+    if (existing) {
+      return existing;
     }
-    return hwid;
-  } catch (error) {
-    return 'BROWSER-FALLBACK-' + navigator.userAgent.length;
+
+    const generated = randomId();
+    localStorage.setItem(STORAGE_KEY, generated);
+    return generated;
+  } catch {
+    return `fallback-${Date.now()}`;
   }
 };
+
+export const getDeviceIdentity = async () => ({
+  deviceId: await getHWID(),
+  platform: getDevicePlatform(),
+  deviceName: getDeviceName(),
+});

@@ -52,6 +52,25 @@ const ensureSupabase = () => {
   return supabase;
 };
 
+const invokeSupabaseFunction = async <T>(name: string, body: JsonRecord = {}) => {
+  const client = ensureSupabase();
+  const { data, error } = await client.functions.invoke(name, { body });
+  if (error) {
+    const message = error.message || 'Erreur Supabase Function';
+    const missingFunction =
+      String(message).toLowerCase().includes('not found') ||
+      String((error as any)?.context?.status || '').includes('404');
+    if (missingFunction) {
+      throw createApiError(
+        `La fonction Supabase "${name}" n'est pas encore deployee. Deploie les Edge Functions de licensing pour activer cette fonctionnalite.`,
+        501
+      );
+    }
+    throw createApiError(message, Number((error as any)?.context?.status || 400));
+  }
+  return data as T;
+};
+
 const createApiError = (message: string, status = 400) => {
   const error: any = new Error(message);
   error.response = { status, data: { message } };
@@ -814,9 +833,21 @@ const unsupportedSyncAction = async () => {
   throw createApiError("La synchronisation locale/Google Drive n'est pas disponible en mode Supabase direct.", 501);
 };
 
-const verifyLicense = async () => ({ data: { active: true } });
-const activateLicense = async () => ({ data: { success: true } });
-const getAdminLicenses = async () => ({ data: [] });
+const verifyLicense = async (payload: JsonRecord = {}) => ({
+  data: await invokeSupabaseFunction('verify-license', payload),
+});
+const activateLicense = async (payload: JsonRecord = {}) => ({
+  data: await invokeSupabaseFunction('activate-license', payload),
+});
+const getAdminLicenses = async () => ({
+  data: await invokeSupabaseFunction<any[]>('admin-licenses', { action: 'list' }),
+});
+const generateAdminLicense = async (payload: JsonRecord = {}) => ({
+  data: await invokeSupabaseFunction('admin-licenses', { action: 'generate', ...payload }),
+});
+const deleteAdminLicense = async (id: string) => ({
+  data: await invokeSupabaseFunction('admin-licenses', { action: 'delete', id }),
+});
 const unsupportedLicensingAction = async () => {
   throw createApiError("La gestion avancee des licences n'est pas encore migree vers Supabase.", 501);
 };
@@ -878,9 +909,11 @@ export const handleSupabaseApiRequest = async (
   if (method === 'GET' && cleanPath === '/sync/status') return getSyncStatus();
   if (cleanPath.startsWith('/sync/')) return unsupportedSyncAction();
 
-  if (method === 'POST' && cleanPath === '/license/verify') return verifyLicense();
-  if (method === 'POST' && cleanPath === '/license/activate') return activateLicense();
+  if (method === 'POST' && cleanPath === '/license/verify') return verifyLicense(payload);
+  if (method === 'POST' && cleanPath === '/license/activate') return activateLicense(payload);
   if (method === 'GET' && cleanPath === '/admin/licenses') return getAdminLicenses();
+  if (method === 'POST' && cleanPath === '/admin/licenses') return generateAdminLicense(payload);
+  if (method === 'DELETE' && cleanPath.startsWith('/admin/licenses/')) return deleteAdminLicense(cleanPath.split('/')[3]);
   if (cleanPath.startsWith('/admin/licenses')) return unsupportedLicensingAction();
 
   return unsupportedRoute(cleanPath);
