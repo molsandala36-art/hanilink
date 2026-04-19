@@ -22,7 +22,7 @@ import Layout from './components/Layout';
 import { getHWID } from './lib/hwid';
 import { getBackendSetupIssue, isSupabaseConfigured } from './lib/backend';
 import api from './services/api';
-import { getStoredSupabaseSession, normalizeSupabaseUser, signOutFromSupabase, supabase } from './services/supabase';
+import { getCurrentSupabaseUserProfile, getStoredSupabaseSession, signOutFromSupabase, supabase } from './services/supabase';
 
 const ProtectedRoute = ({ children, roles }: { children: React.ReactNode, roles: string[] }) => {
   const user = JSON.parse(localStorage.getItem('user') || '{}');
@@ -102,7 +102,7 @@ function App() {
         const session = await getStoredSupabaseSession();
         if (session?.user) {
           localStorage.setItem('token', session.access_token);
-          localStorage.setItem('user', JSON.stringify(normalizeSupabaseUser(session.user)));
+          localStorage.setItem('user', JSON.stringify(session.user));
           setIsAuthenticated(true);
         }
       } catch (err) {
@@ -112,10 +112,15 @@ function App() {
 
     void restoreSupabaseSession();
 
-    const { data: listener } = supabase!.auth.onAuthStateChange((_event, session) => {
+    const { data: listener } = supabase!.auth.onAuthStateChange(async (_event, session) => {
       if (session?.user) {
         localStorage.setItem('token', session.access_token);
-        localStorage.setItem('user', JSON.stringify(normalizeSupabaseUser(session.user)));
+        try {
+          const profile = await getCurrentSupabaseUserProfile(session.user);
+          localStorage.setItem('user', JSON.stringify(profile));
+        } catch (err) {
+          console.error(err);
+        }
         setIsAuthenticated(true);
       } else {
         localStorage.removeItem('token');

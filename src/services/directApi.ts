@@ -1,6 +1,6 @@
 import type { User } from '@supabase/supabase-js';
 import { isSupabaseConfigured, isSupabaseFunctionsBaseUrl } from '../lib/backend';
-import { AppUser, normalizeSupabaseUser, supabase } from './supabase';
+import { AppUser, getCurrentSupabaseUserProfile, supabase } from './supabase';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
@@ -15,6 +15,7 @@ interface ApiResponse<T = any> {
 type JsonRecord = Record<string, any>;
 
 const TABLES = {
+  appUsers: 'app_users',
   products: 'products',
   suppliers: 'suppliers',
   sales: 'sales',
@@ -30,6 +31,7 @@ const TYPE_PREFIX = {
 } as const;
 
 const TABLE_ALIASES = {
+  appUsers: ['app_users', 'users'],
   products: ['products', 'product'],
   suppliers: ['suppliers', 'supplier'],
   sales: ['sales', 'sale'],
@@ -184,7 +186,7 @@ const getCurrentAuthUser = async (): Promise<User> => {
   }
 };
 
-const getCurrentUser = async (): Promise<AppUser> => normalizeSupabaseUser(await getCurrentAuthUser());
+const getCurrentUser = async (): Promise<AppUser> => getCurrentSupabaseUserProfile(await getCurrentAuthUser());
 
 const productFromRow = (row: JsonRecord) => {
   const normalized = normalizeRecord(row);
@@ -210,15 +212,15 @@ const productToRow = async (payload: JsonRecord) => {
   return {
     name: payload.name,
     price: Number(payload.price || 0),
-    purchasePrice: Number(payload.purchasePrice ?? 0),
+    purchase_price: Number(payload.purchasePrice ?? 0),
     stock: Number(payload.stock || 0),
     category: payload.category || 'General',
-    tvaRate: Number(payload.tvaRate ?? 20),
-    supplierTva: Number(payload.supplierTva ?? 20),
+    tva_rate: Number(payload.tvaRate ?? 20),
+    supplier_tva: Number(payload.supplierTva ?? 20),
     place: payload.place || '',
-    photoUrl: payload.photoUrl || '',
-    supplierId: payload.supplierId || null,
-    userId: user.id,
+    photo_url: payload.photoUrl || '',
+    supplier_id: payload.supplierId || null,
+    user_id: user.id,
   };
 };
 
@@ -247,8 +249,8 @@ const supplierToRow = async (payload: JsonRecord) => {
     address: payload.address || '',
     email: payload.email || '',
     ice: payload.ice || '',
-    linkedProducts: asArray<string>(payload.linkedProducts),
-    userId: user.id,
+    linked_products: asArray<string>(payload.linkedProducts),
+    user_id: user.id,
   };
 };
 
@@ -275,16 +277,16 @@ const saleToRow = async (payload: JsonRecord) => {
   const user = await getCurrentUser();
   return {
     items: asArray<JsonRecord>(payload.items).map((item) => ({
-      productId: item.productId,
+      product_id: item.productId,
       name: item.name,
       quantity: Number(item.quantity || 0),
       price: Number(item.price || 0),
-      tvaRate: Number(item.tvaRate ?? 20),
+      tva_rate: Number(item.tvaRate ?? 20),
     })),
-    totalAmount: Number(payload.totalAmount || 0),
-    tvaAmount: Number(payload.tvaAmount || 0),
-    paymentMethod: payload.paymentMethod || 'cash',
-    userId: user.id,
+    total_amount: Number(payload.totalAmount || 0),
+    tva_amount: Number(payload.tvaAmount || 0),
+    payment_method: payload.paymentMethod || 'cash',
+    user_id: user.id,
   };
 };
 
@@ -308,9 +310,9 @@ const expenseToRow = async (payload: JsonRecord) => {
     title: payload.title,
     amount: Number(payload.amount || 0),
     category: payload.category || 'General',
-    expenseDate: payload.expenseDate || new Date().toISOString(),
+    expense_date: payload.expenseDate || new Date().toISOString(),
     notes: payload.notes || '',
-    userId: user.id,
+    user_id: user.id,
   };
 };
 
@@ -336,17 +338,17 @@ const purchaseOrderFromRow = (row: JsonRecord) => {
 const purchaseOrderToRow = async (payload: JsonRecord) => {
   const user = await getCurrentUser();
   return {
-    supplierId: payload.supplierId,
+    supplier_id: payload.supplierId,
     items: asArray<JsonRecord>(payload.items).map((item) => ({
-      productId: item.productId,
+      product_id: item.productId,
       name: item.name || '',
       quantity: Number(item.quantity || 0),
-      unitCost: Number(item.unitCost ?? item.purchasePrice ?? 0),
+      unit_cost: Number(item.unitCost ?? item.purchasePrice ?? 0),
     })),
     status: payload.status || 'Pending',
-    expectedDeliveryDate: payload.expectedDeliveryDate || payload.expectedDate || null,
-    totalAmount: Number(payload.totalAmount || 0),
-    userId: user.id,
+    expected_delivery_date: payload.expectedDeliveryDate || payload.expectedDate || null,
+    total_amount: Number(payload.totalAmount || 0),
+    user_id: user.id,
   };
 };
 
@@ -404,24 +406,25 @@ const documentToRow = async (payload: JsonRecord, existing?: JsonRecord) => {
     throw createApiError('Customer name and at least one item are required');
   }
   return {
-    documentType: payload.documentType || existing?.documentType,
-    documentNumber:
+    document_type: payload.documentType || existing?.documentType || existing?.document_type,
+    document_number:
       existing?.documentNumber ||
+      existing?.document_number ||
       `${TYPE_PREFIX[payload.documentType as keyof typeof TYPE_PREFIX]}-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(Math.random() * 9000) + 1000}`,
-    sourceDocumentId: payload.sourceDocumentId || existing?.sourceDocumentId || null,
-    sourceDocumentType: payload.sourceDocumentType || existing?.sourceDocumentType || null,
-    customerName: payload.customerName,
-    customerPhone: payload.customerPhone || '',
-    customerAddress: payload.customerAddress || '',
-    issueDate: payload.issueDate || existing?.issueDate || new Date().toISOString(),
-    dueDate: payload.dueDate || null,
+    source_document_id: payload.sourceDocumentId || existing?.sourceDocumentId || existing?.source_document_id || null,
+    source_document_type: payload.sourceDocumentType || existing?.sourceDocumentType || existing?.source_document_type || null,
+    customer_name: payload.customerName,
+    customer_phone: payload.customerPhone || '',
+    customer_address: payload.customerAddress || '',
+    issue_date: payload.issueDate || existing?.issueDate || existing?.issue_date || new Date().toISOString(),
+    due_date: payload.dueDate || null,
     status: payload.status || existing?.status || 'draft',
     items: normalizedItems,
     subtotal,
-    taxAmount,
-    totalAmount,
+    tax_amount: taxAmount,
+    total_amount: totalAmount,
     notes: payload.notes || '',
-    userId: user.id,
+    user_id: user.id,
   };
 };
 
@@ -574,7 +577,7 @@ const listBusinessDocuments = async (config?: ApiConfig): Promise<ApiResponse<an
     return { data: sortByDateDesc(asArray<JsonRecord>(rows).map(documentFromRow), ['issueDate', 'createdAt']) };
   }
   let query = ensureSupabase().from(queryTableName).select('*');
-  if (config?.params?.type) query = query.eq('documentType', config.params.type);
+  if (config?.params?.type) query = query.eq('document_type', config.params.type);
   const rows = await runQuery(query);
   return { data: sortByDateDesc(asArray<JsonRecord>(rows).map(documentFromRow), ['issueDate', 'createdAt']) };
 };
@@ -620,22 +623,22 @@ const convertBusinessDocument = async (id: string) => {
     ensureSupabase()
       .from(tableName)
       .insert({
-        documentType: 'invoice',
-        documentNumber: `${TYPE_PREFIX.invoice}-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(Math.random() * 9000) + 1000}`,
-        sourceDocumentId: source._id,
-        sourceDocumentType: source.documentType,
-        customerName: source.customerName,
-        customerPhone: source.customerPhone || '',
-        customerAddress: source.customerAddress || '',
-        issueDate: new Date().toISOString(),
-        dueDate: source.dueDate || null,
+        document_type: 'invoice',
+        document_number: `${TYPE_PREFIX.invoice}-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(Math.random() * 9000) + 1000}`,
+        source_document_id: source._id,
+        source_document_type: source.documentType,
+        customer_name: source.customerName,
+        customer_phone: source.customerPhone || '',
+        customer_address: source.customerAddress || '',
+        issue_date: new Date().toISOString(),
+        due_date: source.dueDate || null,
         status: 'draft',
         items: source.items,
         subtotal: source.subtotal,
-        taxAmount: source.taxAmount,
-        totalAmount: source.totalAmount,
+        tax_amount: source.taxAmount,
+        total_amount: source.totalAmount,
         notes: source.notes || '',
-        userId: user.id,
+        user_id: user.id,
       })
       .select('*')
       .single()
@@ -691,16 +694,66 @@ const getAnalytics = async () => {
   };
 };
 
-const listUsers = async () => ({ data: [await getCurrentUser()] });
+const listUsers = async () => {
+  const currentUser = await getCurrentUser();
+  const companyOwnerId = currentUser.companyOwnerId || currentUser.id;
+  const rows = await withTable('appUsers', 'users', (tableName) =>
+    ensureSupabase().from(tableName).select('*').eq('company_owner_id', companyOwnerId)
+  );
+
+  return {
+    data: asArray<JsonRecord>(rows).map((row) => ({
+      _id: parseId(row.id),
+      id: parseId(row.id),
+      name: row.name || '',
+      email: row.email || '',
+      shopName: row.shop_name || '',
+      companyOwnerId: row.company_owner_id || '',
+      ice: row.ice || '',
+      if: row.if_value || '',
+      rc: row.rc || '',
+      address: row.address || '',
+      role: row.role || 'employee',
+      createdAt: row.created_at || new Date().toISOString(),
+    })),
+  };
+};
 
 const updateUser = async (id: string, payload: JsonRecord) => {
   const authUser = await getCurrentAuthUser();
   if (authUser.id !== id) {
     throw createApiError("La gestion d'autres utilisateurs n'est pas encore disponible en mode Supabase direct.", 501);
   }
-  const { error } = await ensureSupabase().auth.updateUser({ data: { ...authUser.user_metadata, ...payload } });
-  if (error) throw createApiError(error.message);
-  return { data: { message: 'User updated' } };
+
+  const row = {
+    name: payload.name,
+    email: payload.email || authUser.email || '',
+    shop_name: payload.shopName || '',
+    ice: payload.ice || '',
+    if_value: payload.if || '',
+    rc: payload.rc || '',
+    address: payload.address || '',
+  };
+
+  const data = await withTable('appUsers', 'users', (tableName) =>
+    ensureSupabase().from(tableName).update(row).eq('id', id).select('*').single()
+  );
+
+  return {
+    data: {
+      _id: parseId((data as JsonRecord).id),
+      id: parseId((data as JsonRecord).id),
+      name: (data as JsonRecord).name || '',
+      email: (data as JsonRecord).email || '',
+      shopName: (data as JsonRecord).shop_name || '',
+      ice: (data as JsonRecord).ice || '',
+      if: (data as JsonRecord).if_value || '',
+      rc: (data as JsonRecord).rc || '',
+      address: (data as JsonRecord).address || '',
+      role: (data as JsonRecord).role || 'employee',
+      createdAt: (data as JsonRecord).created_at || new Date().toISOString(),
+    },
+  };
 };
 
 const updateUserRole = async (id: string) => {
