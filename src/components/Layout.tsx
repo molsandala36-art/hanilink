@@ -1,29 +1,29 @@
-import { Link, useLocation, Outlet } from 'react-router-dom';
-import { 
-  LayoutDashboard, 
-  Package, 
-  ShoppingCart, 
-  History, 
-  LogOut, 
-  Store,
-  Menu,
-  X,
-  Sun,
-  Moon,
-  Users,
+import { Link, Outlet, useLocation } from 'react-router-dom';
+import {
   BarChart3,
-  FileText,
-  Languages,
   Brain,
-  Settings,
-  Truck,
   ClipboardList,
+  FileText,
+  History,
+  Languages,
+  LayoutDashboard,
+  Layers3,
+  LogOut,
+  Menu,
+  Moon,
+  Package,
+  Settings,
+  ShoppingCart,
+  Store,
+  Sun,
+  Truck,
+  Users,
   Wallet,
-  Layers3
+  X,
 } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { cn } from '../lib/utils';
-import { translations, Language } from '../lib/translations';
+import { Language, translations } from '../lib/translations';
 
 interface LayoutProps {
   onLogout: () => void;
@@ -32,22 +32,18 @@ interface LayoutProps {
 const Layout = ({ onLogout }: LayoutProps) => {
   const location = useLocation();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [language, setLanguage] = useState<Language>(() => {
-    return (localStorage.getItem('language') as Language) || 'fr';
-  });
+  const [isMobile, setIsMobile] = useState(false);
+  const [language, setLanguage] = useState<Language>(() => (localStorage.getItem('language') as Language) || 'fr');
   const [isDarkMode, setIsDarkMode] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const savedTheme = localStorage.getItem('theme');
-      if (savedTheme) return savedTheme === 'dark';
-      // Default to dark mode if no preference is saved
-      return true;
-    }
+    if (typeof window === 'undefined') return true;
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme) return savedTheme === 'dark';
     return true;
   });
 
   const user = JSON.parse(localStorage.getItem('user') || '{}');
-  const isAdmin = user.role === 'admin';
   const t = translations[language];
+  const isPosRoute = location.pathname === '/pos';
 
   useEffect(() => {
     if (isDarkMode) {
@@ -65,6 +61,28 @@ const Layout = ({ onLogout }: LayoutProps) => {
     localStorage.setItem('language', language);
   }, [language]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const mediaQuery = window.matchMedia('(max-width: 1023px)');
+    const syncViewportMode = () => {
+      const mobile = mediaQuery.matches;
+      setIsMobile(mobile);
+      setIsSidebarOpen(!mobile);
+    };
+
+    syncViewportMode();
+    mediaQuery.addEventListener('change', syncViewportMode);
+
+    return () => mediaQuery.removeEventListener('change', syncViewportMode);
+  }, []);
+
+  useEffect(() => {
+    if (isMobile) {
+      setIsSidebarOpen(false);
+    }
+  }, [location.pathname, isMobile]);
+
   const navigation = [
     { name: t.dashboard, href: '/', icon: LayoutDashboard, roles: ['admin', 'employee'] },
     { name: t.analytics, href: '/analytics', icon: BarChart3, roles: ['admin'] },
@@ -81,126 +99,160 @@ const Layout = ({ onLogout }: LayoutProps) => {
     { name: t.users, href: '/users', icon: Users, roles: ['admin'] },
   ];
 
-  const filteredNavigation = navigation.filter(item => item.roles.includes(user.role || 'employee'));
-  const isPosRoute = location.pathname === '/pos';
+  const filteredNavigation = navigation.filter((item) => item.roles.includes(user.role || 'employee'));
 
   const toggleLanguage = () => {
-    setLanguage(prev => prev === 'fr' ? 'ar' : 'fr');
+    setLanguage((current) => (current === 'fr' ? 'ar' : 'fr'));
   };
 
+  const closeSidebar = () => {
+    if (isMobile) {
+      setIsSidebarOpen(false);
+    }
+  };
+
+  const sidebarExpanded = isMobile || isSidebarOpen;
+
   return (
-    <div className="h-screen overflow-hidden bg-gray-50 dark:bg-gray-900 flex transition-colors duration-300">
-      {/* Sidebar */}
-      <aside 
+    <div className="flex h-screen overflow-hidden bg-gray-50 transition-colors duration-300 dark:bg-gray-900">
+      {isMobile && isSidebarOpen && (
+        <button
+          type="button"
+          aria-label="Close sidebar"
+          onClick={() => setIsSidebarOpen(false)}
+          className="fixed inset-0 z-30 bg-black/50 backdrop-blur-sm lg:hidden"
+        />
+      )}
+
+      <aside
         className={cn(
-          "h-screen min-h-0 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transition-all duration-300 flex flex-col shrink-0 overflow-hidden",
-          isSidebarOpen ? "w-64" : "w-20",
-          language === 'ar' ? "border-l border-r-0" : "border-r"
+          'min-h-0 overflow-hidden bg-white dark:bg-gray-800 dark:border-gray-700',
+          isMobile
+            ? [
+                'fixed inset-y-0 z-40 w-72 max-w-[85vw] border shadow-2xl transition-transform duration-300',
+                language === 'ar'
+                  ? (isSidebarOpen ? 'right-0 translate-x-0' : 'right-0 translate-x-full')
+                  : (isSidebarOpen ? 'left-0 translate-x-0' : 'left-0 -translate-x-full'),
+              ]
+            : [
+                'flex h-screen shrink-0 flex-col border-r transition-all duration-300',
+                isSidebarOpen ? 'w-64' : 'w-20',
+                language === 'ar' ? 'border-l border-r-0' : 'border-r',
+              ]
         )}
       >
-        <div className="p-6 flex items-center gap-3 shrink-0">
-          <div className="bg-orange-500 p-2 rounded-lg">
-            <Store className="text-white w-6 h-6" />
+        <div className="flex shrink-0 items-center gap-3 p-6">
+          <div className="rounded-lg bg-orange-500 p-2">
+            <Store className="h-6 w-6 text-white" />
           </div>
-          {isSidebarOpen && <span className="font-bold text-xl text-gray-800 dark:text-white">HaniLink</span>}
+          {sidebarExpanded && <span className="text-xl font-bold text-gray-800 dark:text-white">HaniLink</span>}
         </div>
 
-        <nav className="flex-1 min-h-0 overflow-y-auto px-4 pb-4 space-y-2">
+        <nav className="flex-1 space-y-2 overflow-y-auto px-4 pb-4">
           {filteredNavigation.map((item) => {
             const isActive = location.pathname === item.href;
+
             return (
               <Link
                 key={item.name}
                 to={item.href}
+                onClick={closeSidebar}
                 className={cn(
-                  "flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
-                  isActive 
-                    ? "bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400" 
-                    : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  'flex items-center gap-3 rounded-lg px-3 py-2 transition-colors',
+                  isActive
+                    ? 'bg-orange-50 text-orange-600 dark:bg-orange-900/20 dark:text-orange-400'
+                    : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700'
                 )}
               >
-                <item.icon className="w-5 h-5 shrink-0" />
-                {isSidebarOpen && <span className="font-medium">{item.name}</span>}
+                <item.icon className="h-5 w-5 shrink-0" />
+                {sidebarExpanded && <span className="font-medium">{item.name}</span>}
               </Link>
             );
           })}
         </nav>
 
-        <div className="p-4 border-t border-gray-200 dark:border-gray-700 shrink-0 bg-white dark:bg-gray-800">
-          <div className={cn("flex items-center gap-3 mb-4", !isSidebarOpen && "justify-center")}>
-            <div className="w-8 h-8 rounded-full bg-orange-100 dark:bg-orange-900/40 flex items-center justify-center text-orange-600 dark:text-orange-400 font-bold">
+        <div className="shrink-0 border-t border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+          <div className={cn('mb-4 flex items-center gap-3', !sidebarExpanded && 'justify-center')}>
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-orange-100 font-bold text-orange-600 dark:bg-orange-900/40 dark:text-orange-400">
               {user.name?.[0]?.toUpperCase()}
             </div>
-            {isSidebarOpen && (
+            {sidebarExpanded && (
               <div className="overflow-hidden">
-                <p className="text-sm font-medium text-gray-800 dark:text-white truncate">{user.name}</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400 truncate flex items-center gap-1">
+                <p className="truncate text-sm font-medium text-gray-800 dark:text-white">{user.name}</p>
+                <p className="truncate text-xs text-gray-500 dark:text-gray-400">
                   {user.shopName} • <span className="capitalize">{user.role}</span>
                 </p>
               </div>
             )}
           </div>
+
           <button
             onClick={onLogout}
             className={cn(
-              "w-full flex items-center gap-3 px-3 py-2 text-gray-600 dark:text-gray-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 dark:hover:text-red-400 rounded-lg transition-colors",
-              !isSidebarOpen && "justify-center"
+              'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-gray-600 transition-colors hover:bg-red-50 hover:text-red-600 dark:text-gray-400 dark:hover:bg-red-900/20 dark:hover:text-red-400',
+              !sidebarExpanded && 'justify-center'
             )}
           >
-            <LogOut className="w-5 h-5 shrink-0" />
-            {isSidebarOpen && <span className="font-medium">{t.logout}</span>}
+            <LogOut className="h-5 w-5 shrink-0" />
+            {sidebarExpanded && <span className="font-medium">{t.logout}</span>}
           </button>
         </div>
       </aside>
 
-      {/* Main Content */}
-      <main className="flex-1 h-screen flex flex-col min-w-0 overflow-hidden">
-        <header className="h-16 shrink-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between px-8 transition-colors duration-300">
-          <div className="flex items-center gap-4">
-            <button 
-              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-gray-500 dark:text-gray-400"
+      <main className="flex h-screen min-w-0 flex-1 flex-col overflow-hidden">
+        <header className="flex h-16 shrink-0 items-center justify-between border-b border-gray-200 bg-white px-4 transition-colors duration-300 dark:border-gray-700 dark:bg-gray-800 sm:px-6 lg:px-8">
+          <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+            <button
+              onClick={() => setIsSidebarOpen((current) => !current)}
+              className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
             >
-              {isSidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+              {isSidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </button>
-            <span className="text-sm text-gray-500 dark:text-gray-400 italic hidden md:inline">
-              {language === 'ar' ? `مرحباً بك في المغرب، ${user.shopName}` : `Bienvenue au Maroc, ${user.shopName}`}
+            <span className="hidden truncate text-sm italic text-gray-500 dark:text-gray-400 lg:inline">
+              {language === 'ar' ? `مرحبا بك في المغرب، ${user.shopName}` : `Bienvenue au Maroc, ${user.shopName}`}
             </span>
           </div>
-          
-          <div className="flex items-center gap-4">
+
+          <div className="flex items-center gap-2 sm:gap-4">
             <button
               onClick={toggleLanguage}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-gray-500 dark:text-gray-400 transition-colors flex items-center gap-2"
-              title={language === 'ar' ? "Changer la langue" : "تغيير اللغة"}
+              className="flex items-center gap-2 rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
+              title={language === 'ar' ? 'Changer la langue' : 'تغيير اللغة'}
             >
-              <Languages className="w-5 h-5" />
+              <Languages className="h-5 w-5" />
               <span className="text-xs font-bold">{language === 'ar' ? 'FR' : 'AR'}</span>
             </button>
+
             <button
-              onClick={() => setIsDarkMode(!isDarkMode)}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-gray-500 dark:text-gray-400 transition-colors"
-              title={isDarkMode ? "Passer au mode clair" : "Passer au mode sombre"}
+              onClick={() => setIsDarkMode((current) => !current)}
+              className="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
+              title={isDarkMode ? 'Passer au mode clair' : 'Passer au mode sombre'}
             >
-              {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+              {isDarkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
             </button>
-            <div className="h-8 w-px bg-gray-200 dark:bg-gray-700 mx-2" />
+
+            <div className="mx-1 hidden h-8 w-px bg-gray-200 dark:bg-gray-700 sm:block" />
+
             <div className="flex items-center gap-3">
-              <div className="text-right hidden sm:block">
+              <div className="hidden text-right md:block">
                 <p className="text-sm font-bold text-gray-900 dark:text-white">{user.name}</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400 capitalize">{user.role} - {user.shopName}</p>
+                <p className="text-xs capitalize text-gray-500 dark:text-gray-400">
+                  {user.role} - {user.shopName}
+                </p>
               </div>
-              <div className="w-10 h-10 rounded-full bg-orange-500 flex items-center justify-center text-white font-bold shadow-lg shadow-orange-200 dark:shadow-none">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-orange-500 font-bold text-white shadow-lg shadow-orange-200 dark:shadow-none">
                 {user.name?.[0]?.toUpperCase()}
               </div>
             </div>
           </div>
         </header>
-        
-        <div className={cn(
-          "flex-1 min-w-0",
-          isPosRoute ? "overflow-hidden min-h-0 p-4 lg:p-6" : "overflow-auto p-8"
-        )}>
+
+        <div
+          className={cn(
+            'min-w-0 flex-1',
+            isPosRoute ? 'min-h-0 overflow-hidden p-3 sm:p-4 lg:p-6' : 'overflow-auto p-4 sm:p-6 lg:p-8'
+          )}
+        >
           <Outlet />
         </div>
       </main>
