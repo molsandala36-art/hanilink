@@ -20,6 +20,33 @@ export interface TenantProvisioningPayload {
 
 const sqlEscape = (value: string) => value.replace(/'/g, "''");
 
+export const normalizeSupabaseProjectUrl = (value: string) =>
+  value.trim().replace(/\/functions\/v1$/i, '').replace(/\/+$/, '').toLowerCase();
+
+export const extractSupabaseProjectRef = (value: string) => {
+  const normalized = normalizeSupabaseProjectUrl(value);
+  const match = normalized.match(/^https:\/\/([a-z0-9-]+)\.supabase\.co$/i);
+  return match?.[1]?.toLowerCase() || '';
+};
+
+export const isSameSupabaseProject = (left: string, right: string) => {
+  const normalizedLeft = normalizeSupabaseProjectUrl(left);
+  const normalizedRight = normalizeSupabaseProjectUrl(right);
+
+  if (!normalizedLeft || !normalizedRight) {
+    return false;
+  }
+
+  if (normalizedLeft === normalizedRight) {
+    return true;
+  }
+
+  const leftRef = extractSupabaseProjectRef(normalizedLeft);
+  const rightRef = extractSupabaseProjectRef(normalizedRight);
+
+  return leftRef.length > 0 && leftRef === rightRef;
+};
+
 export const generateTenantProvisioningPayload = (
   input: TenantProvisioningInput
 ): TenantProvisioningPayload => {

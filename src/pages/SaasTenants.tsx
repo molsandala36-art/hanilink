@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+  AlertTriangle,
   Building2,
   CheckCircle2,
   Copy,
@@ -13,7 +14,12 @@ import {
   Save,
   ShieldCheck,
 } from 'lucide-react';
-import { generateTenantProvisioningPayload, type TenantProvisioningInput } from '../lib/saasProvisioning';
+import { getSupabaseUrl } from '../lib/backend';
+import {
+  generateTenantProvisioningPayload,
+  isSameSupabaseProject,
+  type TenantProvisioningInput,
+} from '../lib/saasProvisioning';
 
 const STORAGE_KEY = 'hani_saas_tenant_draft';
 const RUNS_STORAGE_KEY = 'hani_saas_tenant_runs';
@@ -60,6 +66,11 @@ const SaasTenants = () => {
     }
   });
   const [copied, setCopied] = useState('');
+  const currentShopSupabaseUrl = getSupabaseUrl();
+  const reusesCurrentShopDatabase = isSameSupabaseProject(draft.supabaseUrl, currentShopSupabaseUrl);
+  const provisioningIssue = reusesCurrentShopDatabase
+    ? "Ce client pointe vers la meme base Supabase que ta boutique actuelle. Cree d'abord un nouveau projet Supabase dedie, puis colle sa nouvelle URL ici."
+    : '';
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(draft));
@@ -70,12 +81,12 @@ const SaasTenants = () => {
   }, [savedRuns]);
 
   const payload = useMemo(() => {
-    if (!draft.slug || !draft.supabaseUrl || !draft.publishableKey) {
+    if (!draft.slug || !draft.supabaseUrl || !draft.publishableKey || provisioningIssue) {
       return null;
     }
 
     return generateTenantProvisioningPayload(draft);
-  }, [draft]);
+  }, [draft, provisioningIssue]);
 
   const updateField = <K extends keyof TenantProvisioningInput>(key: K, value: TenantProvisioningInput[K]) => {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -135,6 +146,11 @@ const SaasTenants = () => {
           <p className="text-gray-500 dark:text-gray-400 mt-2">
             Ouvre un nouveau client avec sa base Supabase separee, son domaine et sa configuration dediee.
           </p>
+          {currentShopSupabaseUrl ? (
+            <p className="mt-2 text-sm text-orange-600 dark:text-orange-300">
+              Base actuelle de ta boutique: {currentShopSupabaseUrl}
+            </p>
+          ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
           {payload && (
@@ -189,6 +205,14 @@ const SaasTenants = () => {
 
       <div className="grid gap-8 xl:grid-cols-[1.05fr,0.95fr]">
         <section className={`${cardClass} p-6 md:p-8`}>
+          {provisioningIssue ? (
+            <div className="mb-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-200">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+                <p>{provisioningIssue}</p>
+              </div>
+            </div>
+          ) : null}
           <div className="grid gap-5 md:grid-cols-2">
             <label className="block">
               <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Slug client</span>
@@ -234,6 +258,9 @@ const SaasTenants = () => {
                 placeholder="https://client-a.supabase.co"
                 className="mt-2 w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-4 py-3 outline-none focus:ring-2 focus:ring-orange-500 dark:text-white"
               />
+              <span className="mt-2 block text-xs text-gray-500 dark:text-gray-400">
+                Utilise une nouvelle URL Supabase dediee a ce client. Ne reutilise jamais la base de ta boutique actuelle.
+              </span>
             </label>
             <label className="block md:col-span-2">
               <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Publishable key</span>
@@ -371,7 +398,8 @@ const SaasTenants = () => {
           ) : (
             <div className={`${cardClass} p-6`}>
               <div className="rounded-2xl border border-dashed border-gray-300 dark:border-gray-700 p-8 text-center text-gray-500 dark:text-gray-400">
-                Renseigne au minimum le slug, l&apos;URL Supabase et la publishable key pour generer le provisioning.
+                {provisioningIssue ||
+                  "Renseigne au minimum le slug, l'URL Supabase et la publishable key pour generer le provisioning."}
               </div>
             </div>
           )}
@@ -386,7 +414,7 @@ const SaasTenants = () => {
         <div className="mt-4 grid gap-4 lg:grid-cols-3">
           <InfoTile
             title="Schema client"
-            body="Applique supabase/templates/client-app-schema.sql dans la base Supabase du client."
+            body="Applique supabase/templates/client-app-schema.sql dans une nouvelle base Supabase client, jamais dans la base de ta boutique."
           />
           <InfoTile
             title="Schema master"

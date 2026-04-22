@@ -6,6 +6,7 @@ Ce guide sert a creer un nouveau client avec sa base Supabase separee.
 
 - 1 client = 1 projet Supabase
 - 1 projet Supabase client = ses users, ses donnees, ses policies, sa config
+- ne jamais reutiliser la base Supabase de ta boutique pour un nouveau client
 - le frontend HaniLink choisit le bon client via:
   - `?tenant=<slug>`
   - le slug memorise dans le navigateur
@@ -21,6 +22,12 @@ Dans Supabase:
    - Project URL
    - Publishable key
 3. active Email/Password dans Auth si necessaire
+
+Important:
+
+- chaque nouveau client doit avoir son propre projet Supabase
+- ne colle pas l'URL Supabase de ta boutique actuelle dans la fiche d'un nouveau client
+- si l'URL commence par le meme project ref que ta boutique, ce n'est pas une nouvelle base
 
 ## 2. Appliquer le schema applicatif du client
 
