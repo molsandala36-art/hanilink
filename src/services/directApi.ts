@@ -19,6 +19,7 @@ const TABLES = {
   products: 'products',
   suppliers: 'suppliers',
   sales: 'sales',
+  returns: 'sales_returns',
   expenses: 'expenses',
   purchaseOrders: 'purchase_orders',
   businessDocuments: 'business_documents',
@@ -35,6 +36,7 @@ const TABLE_ALIASES = {
   products: ['products', 'product'],
   suppliers: ['suppliers', 'supplier'],
   sales: ['sales', 'sale'],
+  returns: ['sales_returns', 'returns', 'sale_returns', 'salesreturns'],
   expenses: ['expenses', 'expense'],
   purchaseOrders: ['purchase_orders', 'purchaseorders', 'purchase_orders'],
   businessDocuments: ['business_documents', 'businessdocuments', 'documents', 'business_document'],
@@ -361,6 +363,32 @@ const saleToRow = async (payload: JsonRecord) => {
   };
 };
 
+const returnFromRow = (row: JsonRecord) => {
+  const normalized = normalizeRecord(row);
+  return {
+    _id: normalized._id,
+    saleId: parseId(normalized.saleId ?? normalized.sale_id),
+    items: asArray<JsonRecord>(normalized.items).map((item) => ({
+      productId: parseId(item.productId ?? item.product_id),
+      name: item.name || '',
+      quantity: Number(item.quantity || 0),
+      price: Number(item.price || 0),
+      purchasePrice: Number(item.purchasePrice ?? item.purchase_price ?? 0),
+      tvaRate: Number(item.tvaRate ?? item.tva_rate ?? 20),
+      lineTotal: Number(item.lineTotal ?? item.line_total ?? 0),
+    })),
+    subtotalAmount: Number(normalized.subtotalAmount ?? normalized.subtotal_amount ?? 0),
+    tvaAmount: Number(normalized.tvaAmount ?? normalized.tva_amount ?? 0),
+    totalAmount: Number(normalized.totalAmount ?? normalized.total_amount ?? 0),
+    refundMethod: normalized.refundMethod ?? normalized.refund_method ?? 'cash',
+    reason: normalized.reason || '',
+    notes: normalized.notes || '',
+    restocked: normalized.restocked !== false,
+    userId: parseId(normalized.userId ?? normalized.user_id),
+    createdAt: normalized.createdAt,
+  };
+};
+
 const expenseFromRow = (row: JsonRecord) => {
   const normalized = normalizeRecord(row);
   return {
@@ -582,6 +610,131 @@ const createSale = async (payload: JsonRecord) => {
   return { data: saleFromRow(data as JsonRecord) };
 };
 
+const listReturns = async (): Promise<ApiResponse<any[]>> => {
+  const rows = await withTable('returns', 'returns', (tableName) => ensureSupabase().from(tableName).select('*'));
+  return { data: sortByDateDesc(asArray<JsonRecord>(rows).map(returnFromRow), ['createdAt']) };
+};
+
+const getReturnedQuantitiesForSale = async (saleId: string) => {
+  const rows = await withTable('returns', 'returns', (tableName) =>
+    ensureSupabase().from(tableName).select('*').eq('sale_id', saleId)
+  );
+
+  const returnedByProduct = new Map<string, number>();
+  asArray<JsonRecord>(rows).forEach((row) => {
+    asArray<JsonRecord>(row.items).forEach((item) => {
+      const productId = parseId(item.product_id ?? item.productId);
+      if (!productId) return;
+      returnedByProduct.set(productId, (returnedByProduct.get(productId) || 0) + Number(item.quantity || 0));
+    });
+  });
+
+  return returnedByProduct;
+};
+
+const createReturn = async (payload: JsonRecord) => {
+  const saleId = parseId(payload.saleId ?? payload.sale_id);
+  if (!saleId) {
+    throw createApiError('La vente source est obligatoire pour enregistrer un retour.', 400);
+  }
+
+  const saleRows = await withTable('sales', 'sales', (tableName) =>
+    ensureSupabase().from(tableName).select('*').eq('id', saleId).limit(1)
+  );
+  const saleRow = asArray<JsonRecord>(saleRows)[0];
+  if (!saleRow) {
+    throw createApiError('Vente introuvable pour ce retour.', 404);
+  }
+
+  const sale = saleFromRow(saleRow);
+  const alreadyReturnedByProduct = await getReturnedQuantitiesForSale(saleId);
+  const requestedItems = asArray<JsonRecord>(payload.items)
+    .map((item) => ({
+      productId: parseId(item.productId ?? item.product_id),
+      quantity: Number(item.quantity || 0),
+    }))
+    .filter((item) => item.productId && item.quantity > 0);
+
+  if (requestedItems.length === 0) {
+    throw createApiError('Selectionne au moins un article a retourner.', 400);
+  }
+
+  const normalizedItems = requestedItems.map((requestedItem) => {
+    const saleItem = sale.items.find((item) => parseId(item.productId) === requestedItem.productId);
+    if (!saleItem) {
+      throw createApiError(`Article introuvable dans la vente: ${requestedItem.productId}`, 404);
+    }
+
+    const alreadyReturned = alreadyReturnedByProduct.get(requestedItem.productId) || 0;
+    const remainingQuantity = Number(saleItem.quantity || 0) - alreadyReturned;
+    if (remainingQuantity <= 0) {
+      throw createApiError(`Tout le stock de ${saleItem.name} a deja ete retourne pour cette vente.`, 400);
+    }
+    if (requestedItem.quantity > remainingQuantity) {
+      throw createApiError(
+        `Quantite retournee invalide pour ${saleItem.name}. Maximum disponible: ${remainingQuantity}.`,
+        400
+      );
+    }
+
+    const lineTotal = Number(saleItem.price || 0) * requestedItem.quantity;
+    return {
+      product_id: requestedItem.productId,
+      name: saleItem.name || '',
+      quantity: requestedItem.quantity,
+      price: Number(saleItem.price || 0),
+      purchase_price: Number(saleItem.purchasePrice || 0),
+      tva_rate: Number(saleItem.tvaRate || 20),
+      line_total: lineTotal,
+    };
+  });
+
+  const subtotalAmount = normalizedItems.reduce((sum, item) => sum + Number(item.line_total || 0), 0);
+  const tvaAmount = normalizedItems.reduce(
+    (sum, item) => sum + Number(item.line_total || 0) * (Number(item.tva_rate || 0) / 100),
+    0
+  );
+  const totalAmount = subtotalAmount + tvaAmount;
+  const restocked = payload.restocked !== false;
+  const currentUser = await getCurrentUser();
+
+  if (restocked) {
+    for (const item of normalizedItems) {
+      const productRows = await withTable('products', 'products', (tableName) =>
+        ensureSupabase().from(tableName).select('*').eq('id', item.product_id).limit(1)
+      );
+      const product = asArray<JsonRecord>(productRows)[0];
+      if (!product) {
+        throw createApiError(`Produit introuvable pour remise en stock: ${item.name}`, 404);
+      }
+      await withTable('products', 'products', (tableName) =>
+        ensureSupabase()
+          .from(tableName)
+          .update({ stock: Number(product.stock || 0) + Number(item.quantity || 0) })
+          .eq('id', item.product_id)
+      );
+    }
+  }
+
+  const row = {
+    sale_id: saleId,
+    items: normalizedItems,
+    subtotal_amount: subtotalAmount,
+    tva_amount: tvaAmount,
+    total_amount: totalAmount,
+    refund_method: payload.refundMethod || payload.refund_method || sale.paymentMethod || 'cash',
+    reason: String(payload.reason || '').trim(),
+    notes: String(payload.notes || '').trim(),
+    restocked,
+    user_id: currentUser.id,
+  };
+
+  const data = await withTable('returns', 'returns', (tableName) =>
+    ensureSupabase().from(tableName).insert(row).select('*').single()
+  );
+  return { data: returnFromRow(data as JsonRecord) };
+};
+
 const listExpenses = async (): Promise<ApiResponse<any[]>> => {
   const rows = await withTable('expenses', 'expenses', (tableName) => ensureSupabase().from(tableName).select('*'));
   return { data: sortByDateDesc(asArray<JsonRecord>(rows).map(expenseFromRow), ['expenseDate', 'createdAt']) };
@@ -726,19 +879,28 @@ const convertBusinessDocument = async (id: string) => {
 };
 
 const getAnalytics = async () => {
-  const [salesRes, productsRes, expensesRes] = await Promise.all([listSales(), listProducts(), listExpenses()]);
+  const [salesRes, productsRes, expensesRes, returnsRes] = await Promise.all([
+    listSales(),
+    listProducts(),
+    listExpenses(),
+    listReturns(),
+  ]);
   const sales = salesRes.data;
   const products = productsRes.data;
   const expenses = expensesRes.data;
+  const returns = returnsRes.data;
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
   const recentSales = sales.filter((sale) => new Date(sale.createdAt || '').getTime() >= thirtyDaysAgo.getTime());
   const recentExpenses = expenses.filter((expense) => new Date(expense.expenseDate || expense.createdAt || '').getTime() >= thirtyDaysAgo.getTime());
+  const recentReturns = returns.filter((entry) => new Date(entry.createdAt || '').getTime() >= thirtyDaysAgo.getTime());
   const totalRevenue = recentSales.reduce((sum, sale) => sum + Number(sale.totalAmount || 0), 0);
+  const totalReturns = recentReturns.reduce((sum, entry) => sum + Number(entry.totalAmount || 0), 0);
+  const netRevenue = totalRevenue - totalReturns;
   const totalSales = recentSales.length;
-  const averageOrderValue = totalSales ? totalRevenue / totalSales : 0;
+  const averageOrderValue = totalSales ? netRevenue / totalSales : 0;
   const totalExpenses = recentExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
   const productPurchasePriceMap = new Map(
     products.map((product) => [product._id, Number(product.purchasePrice || 0)])
@@ -762,6 +924,14 @@ const getAnalytics = async () => {
     current.count += 1;
     trendMap.set(key, current);
   });
+  recentReturns
+    .filter((entry) => new Date(entry.createdAt || '').getTime() >= sevenDaysAgo.getTime())
+    .forEach((entry) => {
+      const key = new Date(entry.createdAt || '').toISOString().slice(0, 10);
+      const current = trendMap.get(key) || { _id: key, revenue: 0, count: 0 };
+      current.revenue -= Number(entry.totalAmount || 0);
+      trendMap.set(key, current);
+    });
   const topProducts = new Map<string, { _id: string; name: string; totalQuantity: number; totalRevenue: number }>();
   sales.forEach((sale) => {
     sale.items.forEach((item: JsonRecord) => {
@@ -775,12 +945,14 @@ const getAnalytics = async () => {
     data: {
       summary: {
         totalRevenue,
+        totalReturns,
+        netRevenue,
         totalSales,
         averageOrderValue,
         totalExpenses,
         totalCostOfGoods,
         totalOperationalCosts,
-        netProfit: totalRevenue - totalOperationalCosts,
+        netProfit: netRevenue - totalOperationalCosts,
       },
       dailyTrend: Array.from(trendMap.values()).sort((a, b) => a._id.localeCompare(b._id)),
       topProducts: Array.from(topProducts.values()).sort((a, b) => b.totalQuantity - a.totalQuantity).slice(0, 5),
@@ -963,6 +1135,8 @@ export const handleSupabaseApiRequest = async (
 
   if (method === 'GET' && cleanPath === '/sales') return listSales();
   if (method === 'POST' && cleanPath === '/sales') return createSale(payload);
+  if (method === 'GET' && cleanPath === '/returns') return listReturns();
+  if (method === 'POST' && cleanPath === '/returns') return createReturn(payload);
 
   if (method === 'GET' && cleanPath === '/expenses') return listExpenses();
   if (method === 'POST' && cleanPath === '/expenses') return createExpense(payload);
