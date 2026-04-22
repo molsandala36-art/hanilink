@@ -16,7 +16,7 @@
     "tenant:provision": "node scripts/provision-tenant.mjs",
     "electron": "electron electron/main.cjs",
     "desktop:dev": "electron electron/main.cjs",
-    "desktop:build": "npm run build && npm run build:server && electron-builder --win --x64",
+    "desktop:build": "npm run build && npm run build:server && electron-builder --win --x64 --publish never",
     "dist:desktop": "npm run desktop:build",
     "mobile:copy": "npm run build && npx cap copy",
     "mobile:sync": "npm run build && npx cap sync android",
@@ -87,6 +87,7 @@
     "directories": {
       "output": "release"
     },
+    "publish": null,
     "files": [
       "dist/**/*",
       "electron/main.cjs",
