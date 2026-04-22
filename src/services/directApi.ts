@@ -236,6 +236,7 @@ const productFromRow = (row: JsonRecord) => {
     category: normalized.category || 'General',
     tvaRate: Number(normalized.tvaRate ?? normalized.tva_rate ?? 20),
     supplierTva: Number(normalized.supplierTva ?? normalized.supplier_tva ?? 20),
+    barcode: String(normalized.barcode ?? normalized.bar_code ?? normalized.barcode_value ?? ''),
     place: normalized.place || '',
     photoUrl: normalized.photoUrl ?? normalized.photo_url ?? '',
     supplierId: parseId(normalized.supplierId ?? normalized.supplier_id),
@@ -254,11 +255,40 @@ const productToRow = async (payload: JsonRecord) => {
     category: payload.category || 'General',
     tva_rate: Number(payload.tvaRate ?? 20),
     supplier_tva: Number(payload.supplierTva ?? 20),
+    barcode: String(payload.barcode || '').trim(),
     place: payload.place || '',
     photo_url: payload.photoUrl || '',
     supplier_id: payload.supplierId || null,
     user_id: user.id,
   };
+};
+
+const withoutBarcodeColumn = (row: JsonRecord) => {
+  const { barcode, ...rest } = row;
+  return rest;
+};
+
+const runProductMutation = async (
+  executor: (row: JsonRecord | JsonRecord[]) => PromiseLike<{ data: any; error: any }>,
+  row: JsonRecord | JsonRecord[]
+) => {
+  const firstAttempt = await executor(row);
+  if (!firstAttempt.error) {
+    return firstAttempt.data;
+  }
+
+  const hasBarcodeColumn = Array.isArray(row)
+    ? row.some((candidate) => candidate.barcode !== undefined)
+    : row.barcode !== undefined;
+
+  if (hasBarcodeColumn && isMissingSupabaseColumnError(firstAttempt.error)) {
+    return runQuery(
+      executor(Array.isArray(row) ? row.map(withoutBarcodeColumn) : withoutBarcodeColumn(row)),
+      'La table products existe mais certaines colonnes attendues sont absentes.'
+    );
+  }
+
+  throw createApiError(firstAttempt.error.message || 'Erreur Supabase');
 };
 
 const supplierFromRow = (row: JsonRecord) => {
@@ -476,14 +506,19 @@ const listProducts = async (): Promise<ApiResponse<any[]>> => {
 
 const createProduct = async (payload: JsonRecord) => {
   const row = await productToRow(payload);
-  const data = await withTable('products', 'products', (tableName) => ensureSupabase().from(tableName).insert(row).select('*').single());
+  const data = await withTable('products', 'products', (tableName) =>
+    runProductMutation((candidateRow) => ensureSupabase().from(tableName).insert(candidateRow).select('*').single(), row)
+  );
   return { data: productFromRow(data as JsonRecord) };
 };
 
 const updateProduct = async (id: string, payload: JsonRecord) => {
   const row = await productToRow(payload);
   const data = await withTable('products', 'products', (tableName) =>
-    ensureSupabase().from(tableName).update(row).eq('id', id).select('*').single()
+    runProductMutation(
+      (candidateRow) => ensureSupabase().from(tableName).update(candidateRow).eq('id', id).select('*').single(),
+      row
+    )
   );
   return { data: productFromRow(data as JsonRecord) };
 };
@@ -495,7 +530,9 @@ const deleteProduct = async (id: string) => {
 
 const bulkCreateProducts = async (payload: JsonRecord[]) => {
   const rows = await Promise.all(asArray<JsonRecord>(payload).map(productToRow));
-  const data = await withTable('products', 'products', (tableName) => ensureSupabase().from(tableName).insert(rows).select('*'));
+  const data = await withTable('products', 'products', (tableName) =>
+    runProductMutation((candidateRows) => ensureSupabase().from(tableName).insert(candidateRows).select('*'), rows)
+  );
   return { data: asArray<JsonRecord>(data).map(productFromRow) };
 };
 

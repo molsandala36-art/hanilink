@@ -53,6 +53,7 @@ const Settings = () => {
   });
   const [showSuccess, setShowSuccess] = useState(false);
   const [isSavingLegal, setIsSavingLegal] = useState(false);
+  const [isSavingVat, setIsSavingVat] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [isSyncLoading, setIsSyncLoading] = useState(false);
   const [defaultVatRate, setDefaultVatRate] = useState(getDefaultVatRate);
@@ -136,12 +137,52 @@ const Settings = () => {
     }
   };
 
-  const handleSaveVat = () => {
+  const handleSaveVat = async () => {
     const normalizedVatRate = defaultVatRate.trim() === '' ? '0' : defaultVatRate.trim();
-    localStorage.setItem('defaultVatRate', normalizedVatRate);
-    setDefaultVatRate(normalizedVatRate);
-    setShowSuccess(true);
-    setTimeout(() => setShowSuccess(false), 3000);
+    const parsedVatRate = Number(normalizedVatRate);
+
+    if (Number.isNaN(parsedVatRate) || parsedVatRate < 0) {
+      alert(language === 'ar' ? 'ÙŠØ¬Ø¨ Ø¥Ø¯Ø®Ø§Ù„ Ù†Ø³Ø¨Ø© TVA ØµØ§Ù„Ø­Ø©' : 'Veuillez saisir un taux de TVA valide');
+      return;
+    }
+
+    setIsSavingVat(true);
+    try {
+      localStorage.setItem('defaultVatRate', normalizedVatRate);
+      setDefaultVatRate(normalizedVatRate);
+
+      const productsRes = await api.get('/products');
+      const products = Array.isArray(productsRes.data) ? productsRes.data : [];
+
+      await Promise.all(
+        products.map((product: any) =>
+          api.put(`/products/${product._id}`, {
+            name: product.name,
+            price: product.price,
+            purchasePrice: product.purchasePrice,
+            stock: product.stock,
+            category: product.category,
+            tvaRate: parsedVatRate,
+            supplierTva: parsedVatRate,
+            place: product.place || '',
+            photoUrl: product.photoUrl || '',
+            supplierId: product.supplierId || ''
+          })
+        )
+      );
+
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 3000);
+    } catch (err) {
+      console.error('Failed to apply VAT rate to products', err);
+      alert(
+        language === 'ar'
+          ? 'ØªØ¹Ø°Ø± ØªØ·Ø¨ÙŠÙ‚ Ù†Ø³Ø¨Ø© TVA Ø¹Ù„Ù‰ Ø¬Ù…ÙŠØ¹ Ø§Ù„Ù…Ù†ØªØ¬Ø§Øª'
+          : 'Impossible d’appliquer la TVA sur tous les produits'
+      );
+    } finally {
+      setIsSavingVat(false);
+    }
   };
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -430,9 +471,10 @@ const Settings = () => {
                 <button 
                   type="button"
                   onClick={handleSaveVat}
-                  className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg font-bold transition-all"
+                  disabled={isSavingVat}
+                  className="bg-orange-500 hover:bg-orange-600 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg font-bold transition-all"
                 >
-                  {t.save_settings}
+                  {isSavingVat ? (language === 'ar' ? 'Ø¬Ø§Ø±ÙŠ Ø§Ù„ØªØ·Ø¨ÙŠÙ‚...' : 'Application...') : t.save_settings}
                 </button>
               </div>
             </div>

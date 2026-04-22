@@ -51,6 +51,7 @@ create table if not exists public.products (
   category text not null default 'General',
   tva_rate numeric(5,2) not null default 20,
   supplier_tva numeric(5,2) not null default 20,
+  barcode text not null default '',
   place text not null default '',
   photo_url text not null default '',
   created_at timestamptz not null default timezone('utc', now()),

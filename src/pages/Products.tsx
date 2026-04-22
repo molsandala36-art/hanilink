@@ -11,7 +11,8 @@ import {
   Check,
   Upload,
   FileText,
-  CheckCircle2
+  CheckCircle2,
+  ScanLine
 } from 'lucide-react';
 import Fuse from 'fuse.js';
 import Papa from 'papaparse';
@@ -20,6 +21,7 @@ import 'react-image-crop/dist/ReactCrop.css';
 import api from '../services/api';
 import { formatCurrency, cn, getDefaultVatRate } from '../lib/utils';
 import { translations, Language } from '../lib/translations';
+import BarcodeScannerModal from '../components/BarcodeScannerModal';
 
 interface Product {
   _id: string;
@@ -30,6 +32,7 @@ interface Product {
   category: string;
   tvaRate: number;
   supplierTva: number;
+  barcode?: string;
   place: string;
   photoUrl: string;
   supplierId?: string;
@@ -53,6 +56,7 @@ const createDefaultFormData = () => {
     category: 'GÃ©nÃ©ral',
     tvaRate: defaultVatRate,
     supplierTva: defaultVatRate,
+    barcode: '',
     place: '',
     photoUrl: '',
     supplierId: ''
@@ -84,6 +88,7 @@ const Products = () => {
   const [imgSrc, setImgSrc] = useState('');
   const imgRef = useRef<HTMLImageElement>(null);
   const [showCropModal, setShowCropModal] = useState(false);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
 
   const t = translations[language];
 
@@ -186,7 +191,7 @@ const Products = () => {
   };
 
   const fuse = useMemo(() => new Fuse(products, {
-    keys: ['name', 'category'],
+    keys: ['name', 'category', 'barcode'],
     threshold: 0.3,
   }), [products]);
 
@@ -308,6 +313,7 @@ const Products = () => {
           const defaultVatRate = Number(getDefaultVatRate());
           const tvaRate = parseFloat(row.tvaRate || row.TVA || row.tva) || defaultVatRate;
           const supplierTva = parseFloat(row.supplierTva || row.tva_fournisseur) || defaultVatRate;
+          const barcode = String(row.barcode || row.Barcode || row.codebarre || row.code_barres || '').trim();
           const place = row.place || row.emplacement || '';
           const photoUrl = row.photoUrl || row.photo || '';
 
@@ -315,7 +321,7 @@ const Products = () => {
           if (isNaN(price)) errors.push(`Ligne ${index + 1}: Prix invalide`);
           if (isNaN(stock)) errors.push(`Ligne ${index + 1}: Stock invalide`);
 
-          return { name, price, purchasePrice, stock, category, tvaRate, supplierTva, place, photoUrl };
+          return { name, price, purchasePrice, stock, category, tvaRate, supplierTva, barcode, place, photoUrl };
         });
 
         setImportData(validatedData);
@@ -548,6 +554,7 @@ const Products = () => {
                             category: product.category,
                             tvaRate: (product.tvaRate || 20).toString(),
                             supplierTva: (product.supplierTva || 20).toString(),
+                            barcode: product.barcode || '',
                             place: product.place || '',
                             photoUrl: product.photoUrl || '',
                             supplierId: (product as any).supplierId || ''
@@ -740,6 +747,27 @@ const Products = () => {
                 />
               </div>
 
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t.barcode}</label>
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <input
+                    type="text"
+                    className="flex-1 px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none dark:text-white"
+                    value={formData.barcode}
+                    onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
+                    placeholder="EAN / UPC / Code 128"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setIsScannerOpen(true)}
+                    className="inline-flex items-center justify-center gap-2 rounded-lg border border-orange-200 bg-orange-50 px-4 py-2 font-bold text-orange-600 transition-colors hover:bg-orange-100 dark:border-orange-900/40 dark:bg-orange-900/20 dark:text-orange-300 dark:hover:bg-orange-900/30"
+                  >
+                    <ScanLine className="w-4 h-4" />
+                    {t.scan_barcode}
+                  </button>
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t.initial_price} (DH)</label>
@@ -904,6 +932,13 @@ const Products = () => {
           </div>
         </div>
       )}
+
+      <BarcodeScannerModal
+        isOpen={isScannerOpen}
+        language={language}
+        onClose={() => setIsScannerOpen(false)}
+        onDetected={(barcode) => setFormData((current) => ({ ...current, barcode }))}
+      />
     </div>
   );
 };
