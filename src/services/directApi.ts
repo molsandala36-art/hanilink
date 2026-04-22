@@ -16,6 +16,8 @@ type JsonRecord = Record<string, any>;
 
 const TABLES = {
   appUsers: 'app_users',
+  customers: 'customers',
+  customerCredits: 'customer_credits',
   products: 'products',
   suppliers: 'suppliers',
   sales: 'sales',
@@ -33,6 +35,8 @@ const TYPE_PREFIX = {
 
 const TABLE_ALIASES = {
   appUsers: ['app_users', 'users'],
+  customers: ['customers', 'customer', 'clients'],
+  customerCredits: ['customer_credits', 'credits', 'customer_credit', 'client_credits'],
   products: ['products', 'product'],
   suppliers: ['suppliers', 'supplier'],
   sales: ['sales', 'sale'],
@@ -415,6 +419,62 @@ const expenseToRow = async (payload: JsonRecord) => {
   };
 };
 
+const customerFromRow = (row: JsonRecord) => {
+  const normalized = normalizeRecord(row);
+  return {
+    _id: normalized._id,
+    name: normalized.name || '',
+    phone: normalized.phone || '',
+    email: normalized.email || '',
+    address: normalized.address || '',
+    notes: normalized.notes || '',
+    creditLimit: Number(normalized.creditLimit ?? normalized.credit_limit ?? 0),
+    openingBalance: Number(normalized.openingBalance ?? normalized.opening_balance ?? 0),
+    userId: parseId(normalized.userId ?? normalized.user_id),
+    createdAt: normalized.createdAt,
+  };
+};
+
+const customerToRow = async (payload: JsonRecord) => {
+  const user = await getCurrentUser();
+  return {
+    name: String(payload.name || '').trim(),
+    phone: String(payload.phone || '').trim(),
+    email: String(payload.email || '').trim(),
+    address: String(payload.address || '').trim(),
+    notes: String(payload.notes || '').trim(),
+    credit_limit: Number(payload.creditLimit || 0),
+    opening_balance: Number(payload.openingBalance || 0),
+    user_id: user.id,
+  };
+};
+
+const creditEntryFromRow = (row: JsonRecord) => {
+  const normalized = normalizeRecord(row);
+  return {
+    _id: normalized._id,
+    customerId: parseId(normalized.customerId ?? normalized.customer_id),
+    amount: Number(normalized.amount || 0),
+    entryType: normalized.entryType ?? normalized.entry_type ?? 'credit',
+    paymentMethod: normalized.paymentMethod ?? normalized.payment_method ?? 'cash',
+    note: normalized.note || '',
+    userId: parseId(normalized.userId ?? normalized.user_id),
+    createdAt: normalized.createdAt,
+  };
+};
+
+const creditEntryToRow = async (payload: JsonRecord) => {
+  const user = await getCurrentUser();
+  return {
+    customer_id: parseId(payload.customerId ?? payload.customer_id),
+    amount: Number(payload.amount || 0),
+    entry_type: String(payload.entryType || payload.entry_type || 'credit').trim(),
+    payment_method: String(payload.paymentMethod || payload.payment_method || 'cash').trim(),
+    note: String(payload.note || '').trim(),
+    user_id: user.id,
+  };
+};
+
 const purchaseOrderFromRow = (row: JsonRecord) => {
   const normalized = normalizeRecord(row);
   return {
@@ -530,6 +590,49 @@ const documentToRow = async (payload: JsonRecord, existing?: JsonRecord) => {
 const listProducts = async (): Promise<ApiResponse<any[]>> => {
   const rows = await withTable('products', 'products', (tableName) => ensureSupabase().from(tableName).select('*'));
   return { data: sortByDateDesc(asArray<JsonRecord>(rows).map(productFromRow), ['createdAt']) };
+};
+
+const listCustomers = async (): Promise<ApiResponse<any[]>> => {
+  const rows = await withTable('customers', 'customers', (tableName) => ensureSupabase().from(tableName).select('*'));
+  return { data: sortByDateDesc(asArray<JsonRecord>(rows).map(customerFromRow), ['createdAt']) };
+};
+
+const createCustomer = async (payload: JsonRecord) => {
+  const row = await customerToRow(payload);
+  if (!row.name) throw createApiError('Le nom du client est obligatoire.', 400);
+  const data = await withTable('customers', 'customers', (tableName) =>
+    ensureSupabase().from(tableName).insert(row).select('*').single()
+  );
+  return { data: customerFromRow(data as JsonRecord) };
+};
+
+const updateCustomer = async (id: string, payload: JsonRecord) => {
+  const row = await customerToRow(payload);
+  if (!row.name) throw createApiError('Le nom du client est obligatoire.', 400);
+  const data = await withTable('customers', 'customers', (tableName) =>
+    ensureSupabase().from(tableName).update(row).eq('id', id).select('*').single()
+  );
+  return { data: customerFromRow(data as JsonRecord) };
+};
+
+const deleteCustomer = async (id: string) => {
+  await withTable('customers', 'customers', (tableName) => ensureSupabase().from(tableName).delete().eq('id', id));
+  return { data: { message: 'Customer deleted' } };
+};
+
+const listCustomerCredits = async (): Promise<ApiResponse<any[]>> => {
+  const rows = await withTable('customerCredits', 'credits', (tableName) => ensureSupabase().from(tableName).select('*'));
+  return { data: sortByDateDesc(asArray<JsonRecord>(rows).map(creditEntryFromRow), ['createdAt']) };
+};
+
+const createCustomerCredit = async (payload: JsonRecord) => {
+  const row = await creditEntryToRow(payload);
+  if (!row.customer_id) throw createApiError('Le client est obligatoire pour ce mouvement de credit.', 400);
+  if (!row.amount || row.amount <= 0) throw createApiError('Le montant doit etre superieur a zero.', 400);
+  const data = await withTable('customerCredits', 'credits', (tableName) =>
+    ensureSupabase().from(tableName).insert(row).select('*').single()
+  );
+  return { data: creditEntryFromRow(data as JsonRecord) };
 };
 
 const createProduct = async (payload: JsonRecord) => {
@@ -1123,6 +1226,12 @@ export const handleSupabaseApiRequest = async (
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
 
   if (method === 'GET' && cleanPath === '/products') return listProducts();
+  if (method === 'GET' && cleanPath === '/customers') return listCustomers();
+  if (method === 'POST' && cleanPath === '/customers') return createCustomer(payload);
+  if (method === 'PUT' && cleanPath.startsWith('/customers/')) return updateCustomer(cleanPath.split('/')[2], payload);
+  if (method === 'DELETE' && cleanPath.startsWith('/customers/')) return deleteCustomer(cleanPath.split('/')[2]);
+  if (method === 'GET' && cleanPath === '/credits') return listCustomerCredits();
+  if (method === 'POST' && cleanPath === '/credits') return createCustomerCredit(payload);
   if (method === 'POST' && cleanPath === '/products') return createProduct(payload);
   if (method === 'POST' && cleanPath === '/products/bulk') return bulkCreateProducts(payload);
   if (method === 'PUT' && cleanPath.startsWith('/products/')) return updateProduct(cleanPath.split('/')[2], payload);

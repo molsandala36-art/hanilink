@@ -19,6 +19,7 @@ import BusinessDocuments from './pages/BusinessDocuments';
 import AdminLicensing from './pages/AdminLicensing';
 import ActivationScreen from './pages/ActivationScreen';
 import ClientsManagement from './pages/ClientsManagement';
+import CreditsManagement from './pages/CreditsManagement';
 import ReturnsManagement from './pages/ReturnsManagement';
 import Layout from './components/Layout';
 import { getDeviceIdentity } from './lib/hwid';
@@ -264,6 +265,11 @@ function App() {
             <Route path="clients" element={
               <ProtectedRoute roles={['admin']}>
                 <ClientsManagement />
+              </ProtectedRoute>
+            } />
+            <Route path="credits" element={
+              <ProtectedRoute roles={['admin']}>
+                <CreditsManagement />
               </ProtectedRoute>
             } />
             <Route path="returns" element={
