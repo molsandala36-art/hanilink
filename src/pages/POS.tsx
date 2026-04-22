@@ -12,13 +12,15 @@ import {
   Banknote,
   Smartphone,
   AlertTriangle,
-  X
+  X,
+  ScanLine
 } from 'lucide-react';
 import Fuse from 'fuse.js';
 import { motion } from 'motion/react';
 import api from '../services/api';
 import { formatCurrency, formatDate, cn } from '../lib/utils';
 import { translations, Language } from '../lib/translations';
+import BarcodeScannerModal from '../components/BarcodeScannerModal';
 import { Printer } from 'lucide-react';
 
 interface Product {
@@ -30,6 +32,7 @@ interface Product {
   category: string;
   tvaRate: number;
   supplierTva: number;
+  barcode?: string;
   place: string;
   photoUrl: string;
 }
@@ -52,6 +55,7 @@ const POS = () => {
   const [showCMIPayment, setShowCMIPayment] = useState(false);
   const [cmiStatus, setCmiStatus] = useState<'idle' | 'processing' | 'success' | 'error'>('idle');
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
 
   const t = translations[language];
 
@@ -89,7 +93,7 @@ const POS = () => {
   }, []);
 
   const fuse = useMemo(() => new Fuse(products, {
-    keys: ['name', 'category'],
+    keys: ['name', 'category', 'barcode'],
     threshold: 0.3,
   }), [products]);
 
@@ -97,6 +101,9 @@ const POS = () => {
     if (!searchTerm) return products;
     return fuse.search(searchTerm).map(result => result.item);
   }, [fuse, searchTerm, products]);
+
+  const findProductByBarcode = (barcode: string) =>
+    products.find((product) => String(product.barcode || '').trim() === barcode.trim());
 
   const addToCart = (product: Product) => {
     if (product.stock <= 0) {
@@ -117,6 +124,24 @@ const POS = () => {
       }
       return [...prev, { ...product, quantity: 1 }];
     });
+  };
+
+  const handleBarcodeDetected = (barcode: string) => {
+    const normalizedBarcode = barcode.trim();
+    if (!normalizedBarcode) return;
+
+    const product = findProductByBarcode(normalizedBarcode);
+    if (!product) {
+      setWarning(
+        language === 'ar'
+          ? `لا يوجد منتج مطابق للباركود ${normalizedBarcode}`
+          : `Aucun produit ne correspond au code-barres ${normalizedBarcode}`
+      );
+      return;
+    }
+
+    addToCart(product);
+    setSearchTerm('');
   };
 
   const removeFromCart = (productId: string) => {
@@ -345,17 +370,39 @@ const POS = () => {
         )}
 
         <div className="relative mb-6">
-          <Search className={cn("absolute top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5", language === 'ar' ? "right-3" : "left-3")} />
-          <input 
-            type="text" 
-            placeholder={t.search_product}
-            className={cn(
-              "w-full py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none shadow-sm dark:text-white",
-              language === 'ar' ? "pr-10 pl-4" : "pl-10 pr-4"
-            )}
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+          <div className="flex gap-3">
+            <div className="relative flex-1">
+              <Search className={cn("absolute top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5", language === 'ar' ? "right-3" : "left-3")} />
+              <input 
+                type="text" 
+                placeholder={t.search_product}
+                className={cn(
+                  "w-full py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none shadow-sm dark:text-white",
+                  language === 'ar' ? "pr-10 pl-4" : "pl-10 pr-4"
+                )}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter') return;
+                  const normalizedBarcode = searchTerm.trim();
+                  if (!normalizedBarcode) return;
+                  const matchedProduct = findProductByBarcode(normalizedBarcode);
+                  if (!matchedProduct) return;
+                  e.preventDefault();
+                  handleBarcodeDetected(normalizedBarcode);
+                }}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsScannerOpen(true)}
+              className="shrink-0 inline-flex items-center justify-center gap-2 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 font-bold text-orange-600 transition-colors hover:bg-orange-100 dark:border-orange-900/40 dark:bg-orange-900/20 dark:text-orange-300 dark:hover:bg-orange-900/30"
+              title={t.scan_barcode}
+            >
+              <ScanLine className="w-5 h-5" />
+              <span className="hidden sm:inline">{t.scan_barcode}</span>
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1">
@@ -620,6 +667,13 @@ const POS = () => {
           </motion.div>
         </div>
       )}
+
+      <BarcodeScannerModal
+        isOpen={isScannerOpen}
+        language={language}
+        onClose={() => setIsScannerOpen(false)}
+        onDetected={handleBarcodeDetected}
+      />
     </div>
   );
 };
