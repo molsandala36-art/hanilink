@@ -83,14 +83,21 @@ const Products = () => {
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [isImporting, setIsImporting] = useState(false);
   const [language, setLanguage] = useState<Language>(() => (localStorage.getItem('language') as Language) || 'fr');
+  const [isSavingProduct, setIsSavingProduct] = useState(false);
 
   const [crop, setCrop] = useState<Crop>();
   const [imgSrc, setImgSrc] = useState('');
   const imgRef = useRef<HTMLImageElement>(null);
   const [showCropModal, setShowCropModal] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const productSubmitLockRef = useRef(false);
 
   const t = translations[language];
+  const productSubmitLabel = isSavingProduct
+    ? (language === 'ar' ? 'Ø¬Ø§Ø±ÙŠ Ø§Ù„Ø­ÙØ¸...' : 'Enregistrement...')
+    : editingProduct
+      ? (language === 'ar' ? 'Ø­ÙØ¸' : 'Enregistrer')
+      : (language === 'ar' ? 'Ø¥Ø¶Ø§ÙØ©' : 'Ajouter');
 
   function onSelectFile(e: React.ChangeEvent<HTMLInputElement>) {
     if (e.target.files && e.target.files.length > 0) {
@@ -258,6 +265,12 @@ const Products = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (productSubmitLockRef.current) {
+      return;
+    }
+
+    productSubmitLockRef.current = true;
+    setIsSavingProduct(true);
     try {
       let savedProduct: Product;
       if (editingProduct) {
@@ -279,6 +292,9 @@ const Products = () => {
     } catch (err) {
       console.error(err);
       setError(language === 'ar' ? 'تعذر حفظ المنتج' : 'Impossible d’enregistrer le produit');
+    } finally {
+      productSubmitLockRef.current = false;
+      setIsSavingProduct(false);
     }
   };
 
@@ -870,16 +886,18 @@ const Products = () => {
               <div className="flex gap-4 pt-4">
                 <button 
                   type="button"
+                  disabled={isSavingProduct}
                   onClick={() => setIsModalOpen(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-200 rounded-lg font-bold hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-200 rounded-lg font-bold hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {language === 'ar' ? 'إلغاء' : 'Annuler'}
                 </button>
                 <button 
                   type="submit"
-                  className="flex-1 px-4 py-2 bg-orange-500 text-white rounded-lg font-bold hover:bg-orange-600 transition-colors"
+                  disabled={isSavingProduct}
+                  className="flex-1 px-4 py-2 bg-orange-500 text-white rounded-lg font-bold hover:bg-orange-600 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
                 >
-                  {editingProduct ? (language === 'ar' ? 'حفظ' : 'Enregistrer') : (language === 'ar' ? 'إضافة' : 'Ajouter')}
+                  {productSubmitLabel}
                 </button>
               </div>
             </form>
@@ -944,5 +962,6 @@ const Products = () => {
 };
 
 export default Products;
+
 
 
