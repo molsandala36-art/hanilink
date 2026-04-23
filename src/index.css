@@ -15,3 +15,18 @@ body,
 #root {
   min-height: 100%;
 }
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", "Noto Sans", "Noto Sans Arabic", "Helvetica Neue", sans-serif;
+  background: #f8fafc;
+  color: #0f172a;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.dark body {
+  background: #111827;
+  color: #f9fafb;
+}

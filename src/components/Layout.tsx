@@ -217,6 +217,17 @@ const Layout = ({ onLogout }: LayoutProps) => {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-4">
+            {isMobile && (
+              <button
+                onClick={onLogout}
+                className="flex items-center gap-2 rounded-lg px-3 py-2 text-red-600 transition-colors hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
+                title={t.logout}
+              >
+                <LogOut className="h-5 w-5" />
+                <span className="text-xs font-bold">{t.logout}</span>
+              </button>
+            )}
+
             <button
               onClick={toggleLanguage}
               className="flex items-center gap-2 rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"

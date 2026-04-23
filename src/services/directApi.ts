@@ -31,6 +31,8 @@ const TYPE_PREFIX = {
   quote: 'DEV',
   delivery_note: 'BL',
   invoice: 'FAC',
+  purchase_note: 'BA',
+  transfer_note: 'BT',
 } as const;
 
 const TABLE_ALIASES = {
@@ -526,10 +528,13 @@ const documentFromRow = (row: JsonRecord) => {
     dueDate: normalized.dueDate ?? normalized.due_date,
     status: normalized.status || 'draft',
     items: asArray<JsonRecord>(normalized.items).map((item) => ({
+      productId: parseId(item.productId ?? item.product_id),
       description: item.description || '',
       quantity: Number(item.quantity || 0),
       unitPrice: Number(item.unitPrice ?? item.unit_price ?? 0),
       lineTotal: Number(item.lineTotal ?? item.line_total ?? 0),
+      sourcePlace: String(item.sourcePlace ?? item.source_place ?? ''),
+      destinationPlace: String(item.destinationPlace ?? item.destination_place ?? ''),
     })),
     subtotal: Number(normalized.subtotal || 0),
     taxAmount: Number(normalized.taxAmount ?? normalized.tax_amount ?? 0),
@@ -540,16 +545,27 @@ const documentFromRow = (row: JsonRecord) => {
   };
 };
 
-const computeDocumentTotals = (items: JsonRecord[], taxRate: any) => {
+const computeDocumentTotals = (
+  items: JsonRecord[],
+  taxRate: any,
+  documentType?: string,
+  customerAddress?: string
+) => {
   const normalizedItems = asArray<JsonRecord>(items)
     .map((item) => {
       const quantity = Number(item.quantity || 0);
       const unitPrice = Number(item.unitPrice || 0);
       return {
+        productId: parseId(item.productId ?? item.product_id),
         description: String(item.description || '').trim(),
         quantity,
         unitPrice,
         lineTotal: quantity * unitPrice,
+        sourcePlace: String(item.sourcePlace ?? item.source_place ?? ''),
+        destinationPlace:
+          documentType === 'transfer_note'
+            ? String(item.destinationPlace ?? item.destination_place ?? customerAddress ?? '').trim()
+            : String(item.destinationPlace ?? item.destination_place ?? ''),
       };
     })
     .filter((item) => item.description && item.quantity > 0);
@@ -560,12 +576,19 @@ const computeDocumentTotals = (items: JsonRecord[], taxRate: any) => {
 
 const documentToRow = async (payload: JsonRecord, existing?: JsonRecord) => {
   const user = await getCurrentUser();
-  const { normalizedItems, subtotal, taxAmount, totalAmount } = computeDocumentTotals(payload.items, payload.taxRate);
+  const documentType = payload.documentType || existing?.documentType || existing?.document_type;
+  const customerAddress = payload.customerAddress || existing?.customerAddress || existing?.customer_address || '';
+  const { normalizedItems, subtotal, taxAmount, totalAmount } = computeDocumentTotals(
+    payload.items,
+    payload.taxRate,
+    documentType,
+    customerAddress
+  );
   if (!payload.customerName || normalizedItems.length === 0) {
     throw createApiError('Customer name and at least one item are required');
   }
   return {
-    document_type: payload.documentType || existing?.documentType || existing?.document_type,
+    document_type: documentType,
     document_number:
       existing?.documentNumber ||
       existing?.document_number ||
@@ -574,7 +597,7 @@ const documentToRow = async (payload: JsonRecord, existing?: JsonRecord) => {
     source_document_type: payload.sourceDocumentType || existing?.sourceDocumentType || existing?.source_document_type || null,
     customer_name: payload.customerName,
     customer_phone: payload.customerPhone || '',
-    customer_address: payload.customerAddress || '',
+    customer_address: customerAddress,
     issue_date: payload.issueDate || existing?.issueDate || existing?.issue_date || new Date().toISOString(),
     due_date: payload.dueDate || null,
     status: payload.status || existing?.status || 'draft',
@@ -585,6 +608,52 @@ const documentToRow = async (payload: JsonRecord, existing?: JsonRecord) => {
     notes: payload.notes || '',
     user_id: user.id,
   };
+};
+
+const shouldApplyDocumentEffects = (status: string) => String(status || '').toLowerCase() === 'validated';
+
+const loadProductRecord = async (productId: string) => {
+  if (!productId) return null;
+  const rows = await withTable('products', 'products', (tableName) =>
+    ensureSupabase().from(tableName).select('*').eq('id', productId).limit(1)
+  );
+  return asArray<JsonRecord>(rows)[0] || null;
+};
+
+const updateProductRecord = async (productId: string, changes: JsonRecord) => {
+  await withTable('products', 'products', (tableName) =>
+    ensureSupabase().from(tableName).update(changes).eq('id', productId)
+  );
+};
+
+const applyBusinessDocumentEffects = async (document: ReturnType<typeof documentFromRow>, direction: 1 | -1) => {
+  if (!shouldApplyDocumentEffects(document.status)) return;
+
+  if (document.documentType === 'purchase_note') {
+    for (const item of asArray<JsonRecord>(document.items)) {
+      const productId = parseId(item.productId);
+      if (!productId) continue;
+      const product = await loadProductRecord(productId);
+      if (!product) continue;
+      const nextStock = Math.max(0, Number(product.stock || 0) + Number(item.quantity || 0) * direction);
+      await updateProductRecord(productId, { stock: nextStock });
+    }
+  }
+
+  if (document.documentType === 'transfer_note') {
+    for (const item of asArray<JsonRecord>(document.items)) {
+      const productId = parseId(item.productId);
+      if (!productId) continue;
+      const product = await loadProductRecord(productId);
+      if (!product) continue;
+      const targetPlace =
+        direction > 0
+          ? String(item.destinationPlace || document.customerAddress || '').trim()
+          : String(item.sourcePlace || '').trim();
+      if (!targetPlace) continue;
+      await updateProductRecord(productId, { place: targetPlace });
+    }
+  }
 };
 
 const listProducts = async (): Promise<ApiResponse<any[]>> => {
@@ -922,7 +991,9 @@ const createBusinessDocument = async (payload: JsonRecord) => {
   const data = await withTable('businessDocuments', 'documents', (tableName) =>
     ensureSupabase().from(tableName).insert(row).select('*').single()
   );
-  return { data: documentFromRow(data as JsonRecord) };
+  const createdDocument = documentFromRow(data as JsonRecord);
+  await applyBusinessDocumentEffects(createdDocument, 1);
+  return { data: createdDocument };
 };
 
 const updateBusinessDocument = async (id: string, payload: JsonRecord) => {
@@ -931,14 +1002,25 @@ const updateBusinessDocument = async (id: string, payload: JsonRecord) => {
   );
   const current = asArray<JsonRecord>(rows)[0];
   if (!current) throw createApiError('Document not found', 404);
+  const currentDocument = documentFromRow(current);
   const row = await documentToRow(payload, current);
+  await applyBusinessDocumentEffects(currentDocument, -1);
   const data = await withTable('businessDocuments', 'documents', (tableName) =>
     ensureSupabase().from(tableName).update(row).eq('id', id).select('*').single()
   );
-  return { data: documentFromRow(data as JsonRecord) };
+  const updatedDocument = documentFromRow(data as JsonRecord);
+  await applyBusinessDocumentEffects(updatedDocument, 1);
+  return { data: updatedDocument };
 };
 
 const deleteBusinessDocument = async (id: string) => {
+  const rows = await withTable('businessDocuments', 'documents', (tableName) =>
+    ensureSupabase().from(tableName).select('*').eq('id', id).limit(1)
+  );
+  const current = asArray<JsonRecord>(rows)[0];
+  if (current) {
+    await applyBusinessDocumentEffects(documentFromRow(current), -1);
+  }
   await withTable('businessDocuments', 'documents', (tableName) => ensureSupabase().from(tableName).delete().eq('id', id));
   return { data: { message: 'Document deleted' } };
 };
@@ -1197,18 +1279,6 @@ const activateLicense = async (payload: JsonRecord = {}) => ({
     userId: (await getCurrentUser()).id,
   }),
 });
-const getAdminLicenses = async () => ({
-  data: await invokeSupabaseFunction<any[]>('admin-licenses', { action: 'list' }),
-});
-const generateAdminLicense = async (payload: JsonRecord = {}) => ({
-  data: await invokeSupabaseFunction('admin-licenses', { action: 'generate', ...payload }),
-});
-const deleteAdminLicense = async (id: string) => ({
-  data: await invokeSupabaseFunction('admin-licenses', { action: 'delete', id }),
-});
-const unsupportedLicensingAction = async () => {
-  throw createApiError("La gestion avancee des licences n'est pas encore migree vers Supabase.", 501);
-};
 
 const unsupportedRoute = async (path: string) => {
   if (isSupabaseFunctionsBaseUrl) {
@@ -1279,10 +1349,6 @@ export const handleSupabaseApiRequest = async (
 
   if (method === 'POST' && cleanPath === '/license/verify') return verifyLicense(payload);
   if (method === 'POST' && cleanPath === '/license/activate') return activateLicense(payload);
-  if (method === 'GET' && cleanPath === '/admin/licenses') return getAdminLicenses();
-  if (method === 'POST' && cleanPath === '/admin/licenses') return generateAdminLicense(payload);
-  if (method === 'DELETE' && cleanPath.startsWith('/admin/licenses/')) return deleteAdminLicense(cleanPath.split('/')[3]);
-  if (cleanPath.startsWith('/admin/licenses')) return unsupportedLicensingAction();
 
   return unsupportedRoute(cleanPath);
 };

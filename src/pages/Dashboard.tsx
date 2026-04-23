@@ -3,7 +3,7 @@ import {
   TrendingUp, 
   Package, 
   ShoppingCart, 
-  DollarSign,
+  Wallet,
   ArrowUpRight,
   ArrowDownRight,
   AlertTriangle
@@ -72,7 +72,7 @@ const Dashboard = () => {
   const isAdmin = user.role === 'admin';
 
   const cards = [
-    { title: 'Ventes Totales', value: formatCurrency(stats.totalSales), icon: DollarSign, color: 'text-green-600', bg: 'bg-green-100', adminOnly: true },
+    { title: 'Ventes Totales', value: formatCurrency(stats.totalSales), icon: Wallet, color: 'text-green-600', bg: 'bg-green-100', adminOnly: true },
     { title: 'Produits', value: stats.productCount, icon: Package, color: 'text-blue-600', bg: 'bg-blue-100', adminOnly: false },
     { title: 'Commandes', value: stats.recentSales.length, icon: ShoppingCart, color: 'text-orange-600', bg: 'bg-orange-100', adminOnly: false },
     { title: 'Alertes Stock', value: stats.lowStockProducts.length, icon: AlertTriangle, color: 'text-red-600', bg: 'bg-red-100', adminOnly: false },
@@ -80,23 +80,33 @@ const Dashboard = () => {
 
   const filteredCards = cards.filter(card => !card.adminOnly || isAdmin);
 
-  if (loading) return <div className="flex items-center justify-center h-full dark:text-white">Chargement...</div>;
+  if (loading) return <div className="flex h-full items-center justify-center dark:text-white">Chargement...</div>;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 sm:space-y-8">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-black tracking-tight text-gray-900 dark:text-white sm:text-3xl">
+            Tableau de bord
+          </h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400 sm:text-base">
+            Vue d&apos;ensemble claire des ventes, du stock et de l&apos;activité récente.
+          </p>
+        </div>
+      </div>
       {stats.lowStockProducts.length > 0 && (
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-4 rounded-2xl flex items-start gap-4 animate-in fade-in slide-in-from-top-4">
-          <div className="bg-red-100 dark:bg-red-800 p-2 rounded-lg">
+        <div className="flex items-start gap-4 rounded-3xl border border-red-200 bg-red-50 p-4 shadow-sm animate-in fade-in slide-in-from-top-4 dark:border-red-800 dark:bg-red-900/20">
+          <div className="rounded-2xl bg-red-100 p-2.5 dark:bg-red-800">
             <AlertTriangle className="text-red-600 dark:text-red-200 w-5 h-5" />
           </div>
           <div>
-            <h4 className="text-red-800 dark:text-red-200 font-bold">Alertes de stock faible</h4>
+            <h4 className="text-base font-black text-red-800 dark:text-red-200">Alertes de stock faible</h4>
             <p className="text-red-700 dark:text-red-300 text-sm mt-1">
               {stats.lowStockProducts.length} produit(s) ont un stock inférieur à 10 unités.
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               {stats.lowStockProducts.slice(0, 3).map((p: any) => (
-                <span key={p._id} className="bg-red-100 dark:bg-red-800 text-red-700 dark:text-red-200 px-2 py-1 rounded text-xs font-bold">
+                <span key={p._id} className="rounded-full bg-red-100 px-2.5 py-1 text-xs font-bold text-red-700 dark:bg-red-800 dark:text-red-200">
                   {p.name}: {p.stock}
                 </span>
               ))}
@@ -112,26 +122,26 @@ const Dashboard = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {filteredCards.map((card) => (
-          <div key={card.title} className="bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
+          <div key={card.title} className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg dark:border-gray-700 dark:bg-gray-800">
             <div className="flex items-center justify-between mb-4">
-              <div className={`${card.bg} p-3 rounded-xl`}>
+              <div className={`${card.bg} rounded-2xl p-3`}>
                 <card.icon className={`${card.color} w-6 h-6`} />
               </div>
-              <span className="flex items-center text-xs font-medium text-green-600 bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded-full">
+              <span className="flex items-center rounded-full bg-green-50 px-2.5 py-1 text-xs font-bold text-green-600 dark:bg-green-900/20">
                 <ArrowUpRight className="w-3 h-3 mr-1" />
                 2.5%
               </span>
             </div>
-            <h3 className="text-gray-500 dark:text-gray-400 text-sm font-medium">{card.title}</h3>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{card.value}</p>
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{card.title}</h3>
+            <p className="mt-2 text-2xl font-black tracking-tight text-gray-900 dark:text-white">{card.value}</p>
           </div>
         ))}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {isAdmin && (
-          <div className="lg:col-span-2 bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-6">Aperçu des ventes</h3>
+          <div className="lg:col-span-2 rounded-3xl border border-gray-100 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+            <h3 className="mb-6 text-lg font-black text-gray-900 dark:text-white">Aperçu des ventes</h3>
             <div className="h-80">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={stats.salesHistory}>
@@ -157,15 +167,15 @@ const Dashboard = () => {
         )}
 
         <div className={cn(
-          "bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm",
+          "rounded-3xl border border-gray-100 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800",
           !isAdmin && "lg:col-span-4"
         )}>
-          <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-6">Ventes récentes</h3>
+          <h3 className="mb-6 text-lg font-black text-gray-900 dark:text-white">Ventes récentes</h3>
           <div className="space-y-6">
             {stats.recentSales.map((sale: any) => (
-              <div key={sale._id} className="flex items-center justify-between">
+              <div key={sale._id} className="flex items-center justify-between gap-4 rounded-2xl bg-gray-50 px-4 py-3 dark:bg-gray-900/60">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white dark:bg-gray-700">
                     <ShoppingCart className="w-5 h-5 text-gray-500 dark:text-gray-400" />
                   </div>
                   <div>

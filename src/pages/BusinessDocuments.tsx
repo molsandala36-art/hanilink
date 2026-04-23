@@ -4,8 +4,9 @@ import { FileText, Plus, Search, Edit2, Trash2, Printer, Loader2, X, FileUp } fr
 import api from '../services/api';
 import { formatCurrency, formatDate, getDefaultVatRate } from '../lib/utils';
 import { translations, Language } from '../lib/translations';
+import { buildPrintableDocumentHtml, getStoredDocumentSettings } from '../lib/documentSettings';
 
-type DocumentType = 'quote' | 'delivery_note' | 'invoice';
+type DocumentType = 'quote' | 'delivery_note' | 'invoice' | 'purchase_note' | 'transfer_note';
 type DocumentStatus = 'draft' | 'sent' | 'validated';
 
 interface BusinessDocumentItem {
@@ -14,12 +15,15 @@ interface BusinessDocumentItem {
   quantity: number;
   unitPrice: number;
   lineTotal: number;
+  sourcePlace?: string;
+  destinationPlace?: string;
 }
 
 interface ProductOption {
   _id: string;
   name: string;
   price: number;
+  place?: string;
 }
 
 interface BusinessDocument {
@@ -42,7 +46,9 @@ interface BusinessDocument {
 const TYPE_KEYS: Record<DocumentType, string> = {
   quote: 'quote',
   delivery_note: 'delivery_note',
-  invoice: 'invoice'
+  invoice: 'invoice',
+  purchase_note: 'purchase_note',
+  transfer_note: 'transfer_note'
 };
 
 const STATUS_KEYS: Record<DocumentStatus, string> = {
@@ -60,7 +66,7 @@ const createEmptyForm = () => ({
   status: 'draft' as DocumentStatus,
   taxRate: getDefaultVatRate(),
   notes: '',
-  items: [{ productId: '', description: '', quantity: '1', unitPrice: '0' }]
+  items: [{ productId: '', description: '', quantity: '1', unitPrice: '0', sourcePlace: '', destinationPlace: '' }]
 });
 
 const BusinessDocuments = () => {
@@ -75,11 +81,10 @@ const BusinessDocuments = () => {
   const [language] = useState<Language>(() => (localStorage.getItem('language') as Language) || 'fr');
 
   const t = translations[language];
+  const isTransferNote = activeType === 'transfer_note';
+  const isPurchaseNote = activeType === 'purchase_note';
   const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user') || '{}'), []);
-  const receiptSettings = useMemo(() => {
-    const saved = localStorage.getItem('receiptSettings');
-    return saved ? JSON.parse(saved) : { logoUrl: '', primaryColor: '#f97316' };
-  }, []);
+  const receiptSettings = useMemo(() => getStoredDocumentSettings(), []);
 
   const fetchDocuments = async (type = activeType) => {
     try {
@@ -155,12 +160,14 @@ const BusinessDocuments = () => {
       notes: doc.notes || '',
       items: doc.items.length
         ? doc.items.map((item) => ({
-            productId: '',
+            productId: item.productId || '',
             description: item.description,
             quantity: String(item.quantity),
-            unitPrice: String(item.unitPrice)
+            unitPrice: String(item.unitPrice),
+            sourcePlace: item.sourcePlace || '',
+            destinationPlace: item.destinationPlace || ''
           }))
-        : [{ productId: '', description: '', quantity: '1', unitPrice: '0' }]
+        : [{ productId: '', description: '', quantity: '1', unitPrice: '0', sourcePlace: '', destinationPlace: '' }]
     });
     setIsModalOpen(true);
   };
@@ -180,6 +187,7 @@ const BusinessDocuments = () => {
         const selectedProduct = products.find((product) => product._id === value);
         nextItem.description = selectedProduct?.name || '';
         nextItem.unitPrice = selectedProduct ? String(selectedProduct.price ?? 0) : nextItem.unitPrice;
+        nextItem.sourcePlace = selectedProduct?.place || nextItem.sourcePlace || '';
       }
 
       nextItems[index] = nextItem;
@@ -190,7 +198,7 @@ const BusinessDocuments = () => {
   const addItem = () => {
     setFormData((prev) => ({
       ...prev,
-      items: [...prev.items, { productId: '', description: '', quantity: '1', unitPrice: '0' }]
+      items: [...prev.items, { productId: '', description: '', quantity: '1', unitPrice: '0', sourcePlace: '', destinationPlace: '' }]
     }));
   };
 
@@ -216,9 +224,12 @@ const BusinessDocuments = () => {
       notes: formData.notes.trim(),
       items: formData.items
         .map((item) => ({
+          productId: item.productId || '',
           description: item.description.trim(),
           quantity: Number(item.quantity || 0),
-          unitPrice: Number(item.unitPrice || 0)
+          unitPrice: Number(item.unitPrice || 0),
+          sourcePlace: item.sourcePlace || '',
+          destinationPlace: item.destinationPlace || ''
         }))
         .filter((item) => item.description && item.quantity > 0)
     };
@@ -265,130 +276,30 @@ const BusinessDocuments = () => {
     if (!printWindow) return;
 
     const documentTitle = t[TYPE_KEYS[doc.documentType]];
-    const brandBlock = receiptSettings.logoUrl
-      ? `<div class="brand-logo"><img src="${receiptSettings.logoUrl}" alt="Logo" /></div>`
-      : `<div class="brand-mark" style="background:${receiptSettings.primaryColor}">${user.shopName || 'HaniLink'}</div>`;
-    const legalInfo = [
-      `<div class="meta-row"><span>${t.shop_name}</span><strong>${user.shopName || 'HaniLink'}</strong></div>`,
-      user.address ? `<div class="meta-row"><span>${t.address}</span><strong>${user.address}</strong></div>` : '',
-      user.ice ? `<div class="meta-row"><span>${t.ice}</span><strong>${user.ice}</strong></div>` : '',
-      user.if ? `<div class="meta-row"><span>${t.if}</span><strong>${user.if}</strong></div>` : '',
-      user.rc ? `<div class="meta-row"><span>${t.rc}</span><strong>${user.rc}</strong></div>` : ''
-    ].filter(Boolean).join('');
-    const customerInfo = [
-      `<div class="meta-row"><span>${t.customer}</span><strong>${doc.customerName}</strong></div>`,
-      doc.customerPhone ? `<div class="meta-row"><span>${t.phone_label}</span><strong>${doc.customerPhone}</strong></div>` : '',
-      doc.customerAddress ? `<div class="meta-row"><span>${t.address}</span><strong>${doc.customerAddress}</strong></div>` : '',
-      `<div class="meta-row"><span>No.</span><strong>${doc.documentNumber}</strong></div>`,
-      `<div class="meta-row"><span>${t.date}</span><strong>${formatDate(doc.issueDate)}</strong></div>`
-    ].filter(Boolean).join('');
     const taxRate = doc.subtotal > 0 ? ((doc.taxAmount / doc.subtotal) * 100).toFixed(2) : getDefaultVatRate();
-    const html = `
-      <html>
-        <head>
-          <title>${documentTitle} - ${doc.documentNumber}</title>
-          <style>
-            * { box-sizing: border-box; }
-            body { margin: 0; padding: 32px; font-family: Inter, Arial, sans-serif; color: #111827; background: #f3f4f6; }
-            .sheet { max-width: 920px; margin: 0 auto; background: #fff; border-radius: 28px; overflow: hidden; box-shadow: 0 20px 60px rgba(15, 23, 42, 0.12); }
-            .hero { padding: 28px 32px 22px; background: linear-gradient(135deg, ${receiptSettings.primaryColor} 0%, #111827 100%); color: white; }
-            .hero-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; }
-            .brand-logo { display: inline-flex; align-items: center; justify-content: center; min-height: 72px; min-width: 132px; padding: 12px 16px; background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.16); border-radius: 20px; }
-            .brand-logo img { max-height: 64px; max-width: 180px; object-fit: contain; }
-            .brand-mark { display: inline-flex; align-items: center; padding: 16px 20px; border-radius: 20px; font-size: 28px; font-weight: 800; color: white; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.18); }
-            .doc-title { text-align: right; }
-            .doc-title .eyebrow { font-size: 12px; text-transform: uppercase; letter-spacing: 0.18em; opacity: 0.72; margin-bottom: 8px; }
-            .doc-title h1 { margin: 0; font-size: 34px; line-height: 1; font-weight: 800; }
-            .doc-title p { margin: 8px 0 0; font-size: 14px; opacity: 0.84; }
-            .content { padding: 28px 32px 32px; }
-            .meta-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-bottom: 24px; }
-            .meta-card { padding: 18px 20px; border: 1px solid #e5e7eb; border-radius: 20px; background: #f9fafb; }
-            .meta-card h2 { margin: 0 0 14px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.12em; color: #6b7280; }
-            .meta-row { display: flex; justify-content: space-between; gap: 16px; padding: 6px 0; font-size: 13px; border-bottom: 1px dashed #e5e7eb; }
-            .meta-row:last-child { border-bottom: none; }
-            .meta-row span { color: #6b7280; }
-            .meta-row strong { text-align: right; font-weight: 700; color: #111827; }
-            table { width: 100%; border-collapse: separate; border-spacing: 0; border: 1px solid #e5e7eb; border-radius: 22px; overflow: hidden; }
-            thead th { padding: 14px 16px; background: #111827; color: #f9fafb; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; text-align: left; }
-            tbody td { padding: 14px 16px; border-bottom: 1px solid #f1f5f9; font-size: 14px; color: #111827; }
-            tbody tr:nth-child(even) td { background: #fafafa; }
-            tbody tr:last-child td { border-bottom: none; }
-            .qty, .price, .line-total { text-align: right; white-space: nowrap; }
-            .summary { margin-top: 24px; display: grid; grid-template-columns: 1fr 320px; gap: 20px; align-items: start; }
-            .notes { padding: 20px; border-radius: 20px; background: #f9fafb; border: 1px solid #e5e7eb; }
-            .notes h3 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.12em; color: #6b7280; }
-            .notes p { margin: 0; color: #374151; font-size: 14px; line-height: 1.7; }
-            .totals { padding: 20px; border-radius: 24px; background: linear-gradient(180deg, #fff7ed 0%, #ffffff 100%); border: 1px solid #fed7aa; }
-            .totals div { display: flex; justify-content: space-between; gap: 16px; padding: 8px 0; font-size: 14px; }
-            .totals span:first-child { color: #6b7280; }
-            .totals strong { color: #111827; }
-            .grand { margin-top: 8px; padding-top: 14px; border-top: 1px solid #fdba74; font-size: 18px !important; font-weight: 800; }
-            .grand span:first-child, .grand strong { color: ${receiptSettings.primaryColor}; }
-            .footer { padding: 0 32px 28px; font-size: 12px; color: #9ca3af; text-align: center; }
-            @media print { body { background: white; padding: 0; } .sheet { box-shadow: none; border-radius: 0; } }
-          </style>
-        </head>
-        <body>
-          <div class="sheet">
-            <div class="hero">
-              <div class="hero-top">
-                <div>${brandBlock}</div>
-                <div class="doc-title">
-                  <div class="eyebrow">HaniLink</div>
-                  <h1>${documentTitle}</h1>
-                  <p>${doc.documentNumber}</p>
-                </div>
-              </div>
-            </div>
-            <div class="content">
-              <div class="meta-grid">
-                <div class="meta-card">
-                  <h2>${language === 'ar' ? 'Entreprise' : 'Entreprise'}</h2>
-                  ${legalInfo}
-                </div>
-                <div class="meta-card">
-                  <h2>${language === 'ar' ? 'Client' : 'Client'}</h2>
-                  ${customerInfo}
-                </div>
-              </div>
-              <table>
-                <thead>
-                  <tr>
-                    <th>${t.product_name}</th>
-                    <th class="qty">${t.quantity}</th>
-                    <th class="price">${t.price}</th>
-                    <th class="line-total">${t.total}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${doc.items.map((item) => `
-                    <tr>
-                      <td>${item.description}</td>
-                      <td class="qty">${item.quantity}</td>
-                      <td class="price">${formatCurrency(item.unitPrice)}</td>
-                      <td class="line-total">${formatCurrency(item.lineTotal)}</td>
-                    </tr>
-                  `).join('')}
-                </tbody>
-              </table>
-              <div class="summary">
-                <div class="notes">
-                  <h3>${language === 'ar' ? 'Informations' : 'Informations'}</h3>
-                  <p>${doc.notes || (language === 'ar' ? '????? ??????.' : 'Merci pour votre confiance.')}</p>
-                </div>
-                <div class="totals">
-                  <div><span>${t.total_ht}</span><strong>${formatCurrency(doc.subtotal)}</strong></div>
-                  <div><span>${t.total_tva} (${taxRate}%)</span><strong>${formatCurrency(doc.taxAmount)}</strong></div>
-                  <div class="grand"><span>${t.total_ttc}</span><strong>${formatCurrency(doc.totalAmount)}</strong></div>
-                </div>
-              </div>
-            </div>
-            <div class="footer">Document g?n?r? par HaniLink</div>
-          </div>
-          <script>window.onload = () => { window.print(); setTimeout(() => window.close(), 400); }</script>
-        </body>
-      </html>
-    `;
+    const html = buildPrintableDocumentHtml(receiptSettings, user, {
+      title: documentTitle,
+      documentNumber: doc.documentNumber,
+      issueDate: doc.issueDate,
+      customerName: doc.customerName,
+      customerPhone: doc.customerPhone,
+      customerAddress: doc.customerAddress,
+      notes: doc.notes,
+      subtotal: doc.subtotal,
+      taxAmount: doc.taxAmount,
+      totalAmount: doc.totalAmount,
+      taxRateLabel: `${taxRate}%`,
+      items: doc.items.map((item) => ({
+        description: item.description,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        lineTotal: item.lineTotal,
+        secondaryText:
+          doc.documentType === 'transfer_note'
+            ? [item.sourcePlace, item.destinationPlace].filter(Boolean).join(' -> ')
+            : undefined,
+      })),
+    });
 
     printWindow.document.write(html);
     printWindow.document.close();
@@ -403,7 +314,9 @@ const BusinessDocuments = () => {
             {t.documents}
           </h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">
-            {language === 'ar' ? 'إدارة عروض الأسعار وبونات التسليم والفواتير.' : 'Gestion des devis, bons de livraison et factures.'}
+            {language === 'ar'
+              ? 'إدارة عروض الأسعار وبونات التسليم والفواتير وبونات الشراء والتحويل.'
+              : "Gestion des devis, bons de livraison, factures, bons d'achat et bons de transfert."}
           </p>
         </div>
         <button
@@ -416,7 +329,7 @@ const BusinessDocuments = () => {
       </div>
 
       <div className="flex gap-2 mb-4 overflow-x-auto">
-        {(['quote', 'delivery_note', 'invoice'] as DocumentType[]).map((type) => (
+        {(['quote', 'delivery_note', 'invoice', 'purchase_note', 'transfer_note'] as DocumentType[]).map((type) => (
           <button
             key={type}
             onClick={() => setActiveType(type)}
@@ -486,7 +399,7 @@ const BusinessDocuments = () => {
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
-                        {doc.documentType !== 'invoice' && (
+                        {['quote', 'delivery_note'].includes(doc.documentType) && (
                           <button
                             onClick={() => convertToInvoice(doc._id)}
                             className="p-2 text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-xl transition-colors"
@@ -576,7 +489,13 @@ const BusinessDocuments = () => {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t.customer}</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    {isPurchaseNote
+                      ? (language === 'ar' ? 'المرجع' : 'Fournisseur / Référence')
+                      : isTransferNote
+                        ? (language === 'ar' ? 'عنوان التحويل' : 'Libellé du transfert')
+                        : t.customer}
+                  </label>
                   <input
                     type="text"
                     required
@@ -586,7 +505,11 @@ const BusinessDocuments = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t.phone_label}</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    {isTransferNote
+                      ? (language === 'ar' ? 'مرجع داخلي' : 'Référence interne')
+                      : t.phone_label}
+                  </label>
                   <input
                     type="text"
                     value={formData.customerPhone}
@@ -642,7 +565,11 @@ const BusinessDocuments = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t.address}</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  {isTransferNote
+                    ? (language === 'ar' ? 'موقع الوجهة' : 'Emplacement de destination')
+                    : t.address}
+                </label>
                 <textarea
                   value={formData.customerAddress}
                   onChange={(e) => setFormData({ ...formData, customerAddress: e.target.value })}
@@ -671,6 +598,36 @@ const BusinessDocuments = () => {
                         onChange={(e) => updateItem(index, 'description', e.target.value)}
                         className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none dark:text-white"
                       />
+                      {isTransferNote && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          <input
+                            type="text"
+                            value={item.sourcePlace || ''}
+                            onChange={(e) =>
+                              setFormData((prev) => {
+                                const nextItems = [...prev.items];
+                                nextItems[index] = { ...nextItems[index], sourcePlace: e.target.value };
+                                return { ...prev, items: nextItems };
+                              })
+                            }
+                            placeholder={language === 'ar' ? 'الموقع الحالي' : 'Emplacement source'}
+                            className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none dark:text-white"
+                          />
+                          <input
+                            type="text"
+                            value={item.destinationPlace || formData.customerAddress || ''}
+                            onChange={(e) =>
+                              setFormData((prev) => {
+                                const nextItems = [...prev.items];
+                                nextItems[index] = { ...nextItems[index], destinationPlace: e.target.value };
+                                return { ...prev, items: nextItems };
+                              })
+                            }
+                            placeholder={language === 'ar' ? 'الموقع الجديد' : 'Emplacement destination'}
+                            className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none dark:text-white"
+                          />
+                        </div>
+                      )}
                     </div>
                     <input
                       type="number"

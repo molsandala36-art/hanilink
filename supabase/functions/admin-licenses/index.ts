@@ -1,8 +1,22 @@
 import { corsHeaders, json } from '../_shared/cors.ts';
 import { requireAdminUser } from '../_shared/auth.ts';
 
-const randomKey = () =>
-  `HANI-${Math.random().toString(36).slice(2, 6).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+const randomSegment = (length = 8) => {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from({ length }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+};
+
+const randomKey = (format: string) => {
+  if (format === 'demo') {
+    return `HANI-DEMO-${new Date().getFullYear()}`;
+  }
+
+  if (format === 'hani') {
+    return `HANI-${randomSegment(4)}-${randomSegment(4)}`;
+  }
+
+  return `KEY-${randomSegment(8)}`;
+};
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -39,7 +53,8 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'generate') {
-      const key = String(body.key || randomKey()).trim().toUpperCase();
+      const format = String(body.format || 'standard').trim().toLowerCase();
+      const key = String(body.key || randomKey(format)).trim().toUpperCase();
       const now = new Date().toISOString();
       const { data, error } = await admin
         .from('app_licenses')

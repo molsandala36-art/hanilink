@@ -16,7 +16,6 @@ import Suppliers from './pages/Suppliers';
 import PurchaseOrders from './pages/PurchaseOrders';
 import Expenses from './pages/Expenses';
 import BusinessDocuments from './pages/BusinessDocuments';
-import AdminLicensing from './pages/AdminLicensing';
 import ActivationScreen from './pages/ActivationScreen';
 import ClientsManagement from './pages/ClientsManagement';
 import CreditsManagement from './pages/CreditsManagement';
@@ -285,11 +284,6 @@ function App() {
             <Route path="users" element={
               <ProtectedRoute roles={['admin']}>
                 <Users />
-              </ProtectedRoute>
-            } />
-            <Route path="admin/licensing" element={
-              <ProtectedRoute roles={['admin']}>
-                <AdminLicensing />
               </ProtectedRoute>
             } />
           </Route>

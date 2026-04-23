@@ -3,12 +3,13 @@ import { Settings as SettingsIcon, Printer, Save, CheckCircle2, Upload, X as Clo
 import { translations, Language } from '../lib/translations';
 import api from '../services/api';
 import { cn, formatDate, getDefaultVatRate } from '../lib/utils';
-
-interface InvoiceSettings {
-  logoUrl: string;
-  fontSize: string;
-  primaryColor: string;
-}
+import {
+  type DocumentDesign,
+  type DocumentStyleSettings,
+  defaultDocumentStyleSettings,
+  normalizeDocumentSettings,
+  saveDocumentSettings,
+} from '../lib/documentSettings';
 
 interface UserLegalInfo {
   shopName: string;
@@ -43,13 +44,9 @@ const Settings = () => {
     rc: user.rc || '',
     address: user.address || ''
   });
-  const [invoiceSettings, setInvoiceSettings] = useState<InvoiceSettings>(() => {
+  const [invoiceSettings, setInvoiceSettings] = useState<DocumentStyleSettings>(() => {
     const saved = localStorage.getItem('invoiceSettings') ?? localStorage.getItem('receiptSettings');
-    return saved ? JSON.parse(saved) : {
-      logoUrl: '',
-      fontSize: '14px',
-      primaryColor: '#f97316' // orange-500
-    };
+    return saved ? normalizeDocumentSettings(JSON.parse(saved)) : defaultDocumentStyleSettings;
   });
   const [showSuccess, setShowSuccess] = useState(false);
   const [isSavingLegal, setIsSavingLegal] = useState(false);
@@ -113,7 +110,7 @@ const Settings = () => {
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    localStorage.setItem('invoiceSettings', JSON.stringify(invoiceSettings));
+    saveDocumentSettings(invoiceSettings);
     setShowSuccess(true);
     setTimeout(() => setShowSuccess(false), 3000);
   };
@@ -152,23 +149,29 @@ const Settings = () => {
       setDefaultVatRate(normalizedVatRate);
 
       const productsRes = await api.get('/products');
-      const products = Array.isArray(productsRes.data) ? productsRes.data : [];
+      const products = Array.isArray(productsRes.data) ? productsRes.data.filter(Boolean) : [];
 
       await Promise.all(
-        products.map((product: any) =>
-          api.put(`/products/${product._id}`, {
-            name: product.name,
-            price: product.price,
-            purchasePrice: product.purchasePrice,
-            stock: product.stock,
-            category: product.category,
-            tvaRate: parsedVatRate,
-            supplierTva: parsedVatRate,
-            place: product.place || '',
-            photoUrl: product.photoUrl || '',
-            supplierId: product.supplierId || ''
+        products
+          .map((product: any) => {
+            const productId = product?._id || product?.id;
+            if (!productId) return null;
+
+            return api.put(`/products/${productId}`, {
+              name: product.name || '',
+              price: Number(product.price || 0),
+              purchasePrice: Number(product.purchasePrice || 0),
+              stock: Number(product.stock || 0),
+              category: product.category || 'General',
+              tvaRate: parsedVatRate,
+              supplierTva: parsedVatRate,
+              barcode: product.barcode || '',
+              place: product.place || '',
+              photoUrl: product.photoUrl || '',
+              supplierId: product.supplierId || ''
+            });
           })
-        )
+          .filter(Boolean)
       );
 
       setShowSuccess(true);
@@ -198,6 +201,194 @@ const Settings = () => {
 
   const clearLogo = () => {
     setInvoiceSettings({ ...invoiceSettings, logoUrl: '' });
+  };
+
+  const designOptions: Array<{ value: DocumentDesign; label: string; description: string }> = [
+    {
+      value: 'modern',
+      label: 'Modern',
+      description: language === 'ar' ? 'تصميم حديث مع ترويسة قوية' : 'Design moderne avec en-tete premium'
+    },
+    {
+      value: 'classic',
+      label: 'Classic',
+      description: language === 'ar' ? 'تصميم مهني وتقليدي' : 'Design classique et professionnel'
+    },
+    {
+      value: 'compact',
+      label: 'Compact',
+      description: language === 'ar' ? 'تصميم مضغوط وواضح' : 'Design compact pour impression rapide'
+    }
+  ];
+
+  const previewTitle = language === 'ar' ? 'فاتورة قانونية' : 'Facture legale';
+
+  const renderPreview = (settings: DocumentStyleSettings) => {
+    if (settings.documentDesign === 'classic') {
+      return (
+        <div
+          className="border border-gray-300 p-6 rounded-lg bg-white text-black mx-auto max-w-[320px] shadow-inner"
+          style={{ fontSize: settings.fontSize, direction: language === 'ar' ? 'rtl' : 'ltr' }}
+        >
+          <div className="h-2 rounded-full mb-4" style={{ backgroundColor: settings.primaryColor }} />
+          <div className="flex items-center justify-between gap-4 border-b border-gray-300 pb-4 mb-4">
+            <div>
+              {settings.logoUrl ? (
+                <img src={settings.logoUrl} alt="Logo" className="h-12 w-auto max-w-[120px] object-contain" />
+              ) : (
+                <div className="text-lg font-bold" style={{ color: settings.primaryColor }}>
+                  {legalInfo.shopName || 'HaniLink'}
+                </div>
+              )}
+            </div>
+            <div className="text-right">
+              <div className="text-lg font-semibold">{previewTitle}</div>
+              <div className="text-xs text-gray-500">BA-2026-001</div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3 text-[10px] mb-4">
+            <div className="border border-gray-300 p-2">
+              <div className="font-semibold mb-1">Entreprise</div>
+              <div>{legalInfo.shopName || 'HaniLink'}</div>
+              <div>{legalInfo.address || 'Adresse boutique'}</div>
+            </div>
+            <div className="border border-gray-300 p-2">
+              <div className="font-semibold mb-1">Client</div>
+              <div>Client exemple</div>
+              <div>Casablanca</div>
+            </div>
+          </div>
+          <div className="border border-gray-300">
+            <div className="grid grid-cols-[1.6fr_0.6fr_0.8fr] text-[10px] font-semibold bg-gray-100">
+              <div className="p-2">{t.product}</div>
+              <div className="p-2 text-right">{t.quantity}</div>
+              <div className="p-2 text-right">{t.total}</div>
+            </div>
+            <div className="grid grid-cols-[1.6fr_0.6fr_0.8fr] text-[10px]">
+              <div className="p-2">Produit Exemple</div>
+              <div className="p-2 text-right">1</div>
+              <div className="p-2 text-right">100.00 DH</div>
+            </div>
+          </div>
+          <div className="mt-4 text-right space-y-1 text-[10px]">
+            <div className="flex justify-between"><span>{t.total_ht}</span><span>83.33 DH</span></div>
+            <div className="flex justify-between"><span>{t.total_tva}</span><span>16.67 DH</span></div>
+            <div className="flex justify-between font-bold pt-2 border-t border-gray-200" style={{ color: settings.primaryColor }}>
+              <span>{t.total_ttc}</span><span>100.00 DH</span>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (settings.documentDesign === 'compact') {
+      return (
+        <div
+          className="border border-gray-200 p-5 rounded-2xl bg-white text-black mx-auto max-w-[320px] shadow-inner"
+          style={{ fontSize: settings.fontSize, direction: language === 'ar' ? 'rtl' : 'ltr' }}
+        >
+          <div className="flex items-center justify-between gap-3 mb-4">
+            {settings.logoUrl ? (
+              <img src={settings.logoUrl} alt="Logo" className="h-10 w-auto max-w-[110px] object-contain" />
+            ) : (
+              <div className="px-3 py-2 rounded-xl text-white font-bold text-sm" style={{ backgroundColor: settings.primaryColor }}>
+                {legalInfo.shopName || 'HaniLink'}
+              </div>
+            )}
+            <div className="text-right">
+              <div className="font-bold">{previewTitle}</div>
+              <div className="text-[10px] text-gray-500">BT-2026-004</div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-[10px] border border-gray-200 rounded-xl p-3 bg-gray-50 mb-3">
+            <div><span className="font-semibold">Date:</span> 23/04/2026</div>
+            <div><span className="font-semibold">Client:</span> Client exemple</div>
+            <div><span className="font-semibold">ICE:</span> {legalInfo.ice || '0000'}</div>
+            <div><span className="font-semibold">RC:</span> {legalInfo.rc || '0000'}</div>
+          </div>
+          <div className="overflow-hidden rounded-xl border border-gray-200">
+            <div className="grid grid-cols-[1.7fr_0.6fr_0.8fr] text-[10px] text-white" style={{ backgroundColor: settings.primaryColor }}>
+              <div className="p-2">{t.product}</div>
+              <div className="p-2 text-right">{t.quantity}</div>
+              <div className="p-2 text-right">{t.total}</div>
+            </div>
+            <div className="grid grid-cols-[1.7fr_0.6fr_0.8fr] text-[10px] bg-white">
+              <div className="p-2">Produit Exemple</div>
+              <div className="p-2 text-right">1</div>
+              <div className="p-2 text-right">100.00 DH</div>
+            </div>
+          </div>
+          <div className="mt-3 rounded-xl border border-orange-200 bg-orange-50 p-3 text-[10px]">
+            <div className="flex justify-between"><span>{t.total_ht}</span><span>83.33 DH</span></div>
+            <div className="flex justify-between"><span>{t.total_tva}</span><span>16.67 DH</span></div>
+            <div className="flex justify-between font-bold pt-2 mt-2 border-t border-orange-200" style={{ color: settings.primaryColor }}>
+              <span>{t.total_ttc}</span><span>100.00 DH</span>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div
+        className="border border-gray-200 p-6 rounded-lg bg-white text-black mx-auto max-w-[320px] shadow-inner"
+        style={{ fontSize: settings.fontSize, direction: language === 'ar' ? 'rtl' : 'ltr' }}
+      >
+        <div
+          className="rounded-2xl p-4 text-white mb-4"
+          style={{ background: `linear-gradient(135deg, ${settings.primaryColor} 0%, #111827 100%)` }}
+        >
+          <div className="flex items-start justify-between gap-4">
+            {settings.logoUrl ? (
+              <img src={settings.logoUrl} alt="Logo" className="h-12 w-auto max-w-[120px] rounded-lg bg-white/10 p-2 object-contain" />
+            ) : (
+              <div className="rounded-xl bg-white/10 px-4 py-3 text-lg font-bold">{legalInfo.shopName || 'HaniLink'}</div>
+            )}
+            <div className="text-right">
+              <div className="text-[10px] uppercase tracking-[0.2em] opacity-70">HaniLink</div>
+              <div className="text-lg font-bold">{previewTitle}</div>
+              <div className="text-xs opacity-80">DV-2026-008</div>
+            </div>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3 mb-4 text-[10px]">
+          <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+            <div className="font-semibold mb-1">Entreprise</div>
+            <div>{legalInfo.shopName || 'HaniLink'}</div>
+            <div>{legalInfo.address || 'Adresse boutique'}</div>
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+            <div className="font-semibold mb-1">Client</div>
+            <div>Client exemple</div>
+            <div>Casablanca</div>
+          </div>
+        </div>
+        <div className="overflow-hidden rounded-2xl border border-gray-200 mb-4">
+          <div className="grid grid-cols-[1.7fr_0.6fr_0.8fr] bg-gray-900 text-[10px] text-white">
+            <div className="p-2">{t.product}</div>
+            <div className="p-2 text-right">{t.quantity}</div>
+            <div className="p-2 text-right">{t.total}</div>
+          </div>
+          <div className="grid grid-cols-[1.7fr_0.6fr_0.8fr] text-[10px]">
+            <div className="p-2">Produit Exemple</div>
+            <div className="p-2 text-right">1</div>
+            <div className="p-2 text-right">100.00 DH</div>
+          </div>
+        </div>
+        <div className="grid grid-cols-[1fr_auto] gap-3 items-start">
+          <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-[10px]">
+            Merci pour votre confiance.
+          </div>
+          <div className="rounded-2xl border border-orange-200 bg-orange-50 p-3 text-[10px] min-w-[120px]">
+            <div className="flex justify-between gap-4"><span>{t.total_ht}</span><span>83.33 DH</span></div>
+            <div className="flex justify-between gap-4"><span>{t.total_tva}</span><span>16.67 DH</span></div>
+            <div className="flex justify-between gap-4 font-bold pt-2 mt-2 border-t border-orange-200" style={{ color: settings.primaryColor }}>
+              <span>{t.total_ttc}</span><span>100.00 DH</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   const runSync = async (mode: 'pull' | 'push') => {
@@ -424,6 +615,43 @@ const Settings = () => {
                     />
                   </div>
                 </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    {language === 'ar' ? 'تصميم الوثيقة' : 'Design du document'}
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {designOptions.map((option) => {
+                      const active = invoiceSettings.documentDesign === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => setInvoiceSettings({ ...invoiceSettings, documentDesign: option.value })}
+                          className={cn(
+                            'rounded-2xl border px-4 py-4 text-left transition-all',
+                            active
+                              ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/20 shadow-sm'
+                              : 'border-gray-200 dark:border-gray-700 hover:border-orange-300 hover:bg-gray-50 dark:hover:bg-gray-900/40'
+                          )}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <div className="font-bold text-gray-900 dark:text-white">{option.label}</div>
+                              <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">{option.description}</div>
+                            </div>
+                            <div
+                              className={cn(
+                                'h-3 w-3 rounded-full border',
+                                active ? 'border-orange-500 bg-orange-500' : 'border-gray-300 dark:border-gray-600'
+                              )}
+                            />
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -637,8 +865,9 @@ const Settings = () => {
             <Printer className="w-5 h-5 text-gray-400" />
             {language === 'ar' ? 'معاينة الفاتورة' : 'Aperçu de la facture'}
           </h3>
+          {renderPreview(invoiceSettings)}
           <div 
-            className="border border-gray-200 dark:border-gray-700 p-6 rounded-lg bg-white text-black mx-auto max-w-[300px] shadow-inner"
+            className="hidden border border-gray-200 dark:border-gray-700 p-6 rounded-lg bg-white text-black mx-auto max-w-[300px] shadow-inner"
             style={{ fontSize: invoiceSettings.fontSize, direction: language === 'ar' ? 'rtl' : 'ltr' }}
           >
             <div className="text-center mb-4">
