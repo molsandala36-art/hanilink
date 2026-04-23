@@ -10,6 +10,7 @@ import {
   normalizeDocumentSettings,
   saveDocumentSettings,
 } from '../lib/documentSettings';
+import { isSupabaseConfigured } from '../lib/backend';
 
 interface UserLegalInfo {
   shopName: string;
@@ -57,6 +58,7 @@ const Settings = () => {
   const [googleDriveFolderPath, setGoogleDriveFolderPath] = useState('');
 
   const t = translations[language];
+  const syncUnavailableInCurrentMode = isSupabaseConfigured();
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -715,6 +717,14 @@ const Settings = () => {
             {t.local_db_sync}
           </h3>
 
+          {syncUnavailableInCurrentMode && (
+            <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-200">
+              {language === 'ar'
+                ? 'المزامنة المحلية غير متاحة في وضع Supabase direct.'
+                : 'La synchronisation locale n’est pas disponible en mode Supabase direct.'}
+            </div>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
             <div className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
               <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">{t.mongo_connected}</p>
@@ -745,7 +755,7 @@ const Settings = () => {
           <div className="flex flex-col sm:flex-row gap-3">
             <button
               onClick={() => runSync('pull')}
-              disabled={isSyncLoading}
+              disabled={isSyncLoading || syncUnavailableInCurrentMode}
               className="flex-1 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg font-bold flex items-center justify-center gap-2 transition-all"
             >
               <RefreshCw className={cn("w-4 h-4", isSyncLoading && "animate-spin")} />
@@ -753,7 +763,7 @@ const Settings = () => {
             </button>
             <button
               onClick={() => runSync('push')}
-              disabled={isSyncLoading}
+              disabled={isSyncLoading || syncUnavailableInCurrentMode}
               className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg font-bold flex items-center justify-center gap-2 transition-all"
             >
               <RefreshCw className={cn("w-4 h-4", isSyncLoading && "animate-spin")} />
@@ -761,7 +771,7 @@ const Settings = () => {
             </button>
             <button
               onClick={fetchSyncStatus}
-              disabled={isSyncLoading}
+              disabled={isSyncLoading || syncUnavailableInCurrentMode}
               className="px-4 py-2 rounded-lg font-bold border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all"
             >
               {t.sync_status}
@@ -775,6 +785,14 @@ const Settings = () => {
             Google Drive Sync
           </h3>
 
+          {syncUnavailableInCurrentMode && (
+            <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-200">
+              {language === 'ar'
+                ? 'مزامنة Google Drive غير متاحة في وضع Supabase direct.'
+                : 'La synchronisation Google Drive n’est pas disponible en mode Supabase direct.'}
+            </div>
+          )}
+
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -786,12 +804,13 @@ const Settings = () => {
                   placeholder={language === 'ar' ? 'مثال: C:\\Users\\Nom\\Google Drive\\HaniLink' : 'Ex: C:\\Users\\Nom\\Google Drive\\HaniLink'}
                   value={googleDriveFolderPath}
                   onChange={(e) => setGoogleDriveFolderPath(e.target.value)}
+                  disabled={syncUnavailableInCurrentMode}
                   className="flex-1 px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none dark:text-white"
                 />
                 <button
                   type="button"
                   onClick={saveGoogleDriveSync}
-                  disabled={isSyncLoading}
+                  disabled={isSyncLoading || syncUnavailableInCurrentMode}
                   className="bg-orange-500 hover:bg-orange-600 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg font-bold transition-all"
                 >
                   {t.save_settings}
@@ -842,7 +861,7 @@ const Settings = () => {
             <div className="flex flex-col sm:flex-row gap-3">
               <button
                 onClick={() => runGoogleDriveSync('push')}
-                disabled={isSyncLoading || !googleDriveFolderPath.trim()}
+                disabled={isSyncLoading || syncUnavailableInCurrentMode || !googleDriveFolderPath.trim()}
                 className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg font-bold flex items-center justify-center gap-2 transition-all"
               >
                 <RefreshCw className={cn('w-4 h-4', isSyncLoading && 'animate-spin')} />
@@ -850,7 +869,7 @@ const Settings = () => {
               </button>
               <button
                 onClick={() => runGoogleDriveSync('pull')}
-                disabled={isSyncLoading || !googleDriveFolderPath.trim()}
+                disabled={isSyncLoading || syncUnavailableInCurrentMode || !googleDriveFolderPath.trim()}
                 className="flex-1 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg font-bold flex items-center justify-center gap-2 transition-all"
               >
                 <RefreshCw className={cn('w-4 h-4', isSyncLoading && 'animate-spin')} />
