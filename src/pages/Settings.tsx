@@ -21,18 +21,13 @@ interface UserLegalInfo {
 }
 
 interface SyncStatus {
+  isOnline: boolean;
+  pendingOperations: number;
   localDbPath: string;
-  mongoConnected: boolean;
   fileSizeBytes: number;
-  lastPullAt: string | null;
-  lastPushAt: string | null;
-  lastDrivePullAt: string | null;
-  lastDrivePushAt: string | null;
+  lastSyncAt: string | null;
+  lastError: string | null;
   collectionCounts: Record<string, number>;
-  googleDriveFolderPath: string;
-  googleDriveFilePath: string;
-  googleDriveFileExists: boolean;
-  googleDriveFileSizeBytes: number;
 }
 
 const Settings = () => {
@@ -55,10 +50,9 @@ const Settings = () => {
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [isSyncLoading, setIsSyncLoading] = useState(false);
   const [defaultVatRate, setDefaultVatRate] = useState(getDefaultVatRate);
-  const [googleDriveFolderPath, setGoogleDriveFolderPath] = useState('');
 
   const t = translations[language];
-  const syncUnavailableInCurrentMode = isSupabaseConfigured();
+  const offlineReadyInCurrentMode = isSupabaseConfigured();
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -100,7 +94,6 @@ const Settings = () => {
     try {
       const res = await api.get('/sync/status');
       setSyncStatus(res.data);
-      setGoogleDriveFolderPath(res.data.googleDriveFolderPath || '');
     } catch (err) {
       console.error('Failed to fetch sync status', err);
     }
@@ -414,36 +407,6 @@ const Settings = () => {
     }
   };
 
-  const saveGoogleDriveSync = async () => {
-    setIsSyncLoading(true);
-    try {
-      await api.post('/sync/google-drive/config', { googleDriveFolderPath });
-      await fetchSyncStatus();
-      setShowSuccess(true);
-      setTimeout(() => setShowSuccess(false), 3000);
-    } catch (err) {
-      console.error('Google Drive config failed', err);
-      alert(language === 'ar' ? 'فشل حفظ إعداد Google Drive' : 'Échec de l\'enregistrement du dossier Google Drive');
-    } finally {
-      setIsSyncLoading(false);
-    }
-  };
-
-  const runGoogleDriveSync = async (mode: 'pull' | 'push') => {
-    setIsSyncLoading(true);
-    try {
-      await api.post(`/sync/google-drive/${mode}`);
-      await fetchSyncStatus();
-      setShowSuccess(true);
-      setTimeout(() => setShowSuccess(false), 3000);
-    } catch (err) {
-      console.error('Google Drive sync failed', err);
-      alert(language === 'ar' ? 'فشلت مزامنة Google Drive' : 'La synchronisation Google Drive a échoué');
-    } finally {
-      setIsSyncLoading(false);
-    }
-  };
-
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -720,168 +683,94 @@ const Settings = () => {
         <div className="mt-8 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-6 shadow-sm">
           <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
             <Database className="w-5 h-5 text-gray-400" />
-            {t.local_db_sync}
+            {language === 'ar' ? 'التخزين المحلي والمزامنة' : 'Stockage local et synchronisation'}
           </h3>
 
-          {syncUnavailableInCurrentMode && (
-            <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-200">
+          {offlineReadyInCurrentMode && (
+            <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900/50 dark:bg-emerald-900/20 dark:text-emerald-200">
               {language === 'ar'
-                ? 'المزامنة المحلية غير متاحة في وضع Supabase direct.'
-                : 'La synchronisation locale n’est pas disponible en mode Supabase direct.'}
+                ? 'يمكنك الاستمرار محلياً عند انقطاع الإنترنت، وستتم مزامنة العمليات المعلقة مع Supabase عند عودة الاتصال.'
+                : 'Vous pouvez continuer a travailler localement hors ligne. Les operations en attente seront resynchronisees vers Supabase au retour de la connexion.'}
             </div>
           )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
             <div className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
-              <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">{t.mongo_connected}</p>
-              <p className={cn("font-bold", syncStatus?.mongoConnected ? "text-green-600" : "text-red-600")}>
-                {syncStatus?.mongoConnected ? 'Yes' : 'No'}
+              <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">
+                {language === 'ar' ? 'État de connexion' : 'Etat de connexion'}
+              </p>
+              <p className={cn("font-bold", syncStatus?.isOnline ? "text-green-600" : "text-amber-600")}>
+                {syncStatus?.isOnline
+                  ? language === 'ar'
+                    ? 'متصل'
+                    : 'En ligne'
+                  : language === 'ar'
+                    ? 'دون اتصال'
+                    : 'Hors ligne'}
               </p>
             </div>
             <div className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
-              <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">{t.local_file_size}</p>
+              <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">
+                {language === 'ar' ? 'Taille cache local' : 'Taille cache local'}
+              </p>
               <p className="font-bold text-gray-900 dark:text-white">
                 {syncStatus ? `${(syncStatus.fileSizeBytes / 1024).toFixed(2)} KB` : '-'}
               </p>
             </div>
             <div className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
-              <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">{t.last_pull}</p>
+              <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">
+                {language === 'ar' ? 'Operations en attente' : 'Operations en attente'}
+              </p>
               <p className="font-bold text-gray-900 dark:text-white">
-                {syncStatus?.lastPullAt ? formatDate(syncStatus.lastPullAt) : '-'}
+                {syncStatus?.pendingOperations ?? 0}
               </p>
             </div>
             <div className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
-              <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">{t.last_push}</p>
-              <p className="font-bold text-gray-900 dark:text-white">
-                {syncStatus?.lastPushAt ? formatDate(syncStatus.lastPushAt) : '-'}
+              <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">
+                {language === 'ar' ? 'Derniere synchro Supabase' : 'Derniere synchro Supabase'}
               </p>
+              <p className="font-bold text-gray-900 dark:text-white">
+                {syncStatus?.lastSyncAt ? formatDate(syncStatus.lastSyncAt) : '-'}
+              </p>
+            </div>
+          </div>
+
+          {syncStatus?.lastError && (
+            <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-200">
+              {syncStatus.lastError}
+            </div>
+          )}
+
+          <div className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 mb-4">
+            <p className="text-xs uppercase tracking-wider text-gray-500 mb-3">
+              {language === 'ar' ? 'Collections locales' : 'Collections locales'}
+            </p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              {Object.entries(syncStatus?.collectionCounts || {}).map(([key, value]) => (
+                <div key={key} className="rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2 bg-white dark:bg-gray-800">
+                  <p className="text-gray-500">{key}</p>
+                  <p className="font-bold text-gray-900 dark:text-white">{value}</p>
+                </div>
+              ))}
             </div>
           </div>
 
           <div className="flex flex-col sm:flex-row gap-3">
             <button
-              onClick={() => runSync('pull')}
-              disabled={isSyncLoading || syncUnavailableInCurrentMode}
+              onClick={() => runSync('push')}
+              disabled={isSyncLoading || !offlineReadyInCurrentMode}
               className="flex-1 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg font-bold flex items-center justify-center gap-2 transition-all"
             >
               <RefreshCw className={cn("w-4 h-4", isSyncLoading && "animate-spin")} />
-              {t.sync_pull}
-            </button>
-            <button
-              onClick={() => runSync('push')}
-              disabled={isSyncLoading || syncUnavailableInCurrentMode}
-              className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg font-bold flex items-center justify-center gap-2 transition-all"
-            >
-              <RefreshCw className={cn("w-4 h-4", isSyncLoading && "animate-spin")} />
-              {t.sync_push}
+              {language === 'ar' ? 'Sync vers Supabase' : 'Sync vers Supabase'}
             </button>
             <button
               onClick={fetchSyncStatus}
-              disabled={isSyncLoading || syncUnavailableInCurrentMode}
+              disabled={isSyncLoading}
               className="px-4 py-2 rounded-lg font-bold border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all"
             >
-              {t.sync_status}
+              {language === 'ar' ? 'Rafraichir le statut' : 'Rafraichir le statut'}
             </button>
-          </div>
-        </div>
-
-        <div className="mt-8 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-6 shadow-sm">
-          <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-            <Database className="w-5 h-5 text-gray-400" />
-            Google Drive Sync
-          </h3>
-
-          {syncUnavailableInCurrentMode && (
-            <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-200">
-              {language === 'ar'
-                ? 'مزامنة Google Drive غير متاحة في وضع Supabase direct.'
-                : 'La synchronisation Google Drive n’est pas disponible en mode Supabase direct.'}
-            </div>
-          )}
-
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                {language === 'ar' ? 'مسار مجلد Google Drive' : 'Chemin du dossier Google Drive'}
-              </label>
-              <div className="flex flex-col sm:flex-row gap-3">
-                <input
-                  type="text"
-                  placeholder={language === 'ar' ? 'مثال: C:\\Users\\Nom\\Google Drive\\HaniLink' : 'Ex: C:\\Users\\Nom\\Google Drive\\HaniLink'}
-                  value={googleDriveFolderPath}
-                  onChange={(e) => setGoogleDriveFolderPath(e.target.value)}
-                  disabled={syncUnavailableInCurrentMode}
-                  className="flex-1 px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none dark:text-white"
-                />
-                <button
-                  type="button"
-                  onClick={saveGoogleDriveSync}
-                  disabled={isSyncLoading || syncUnavailableInCurrentMode}
-                  className="bg-orange-500 hover:bg-orange-600 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg font-bold transition-all"
-                >
-                  {t.save_settings}
-                </button>
-              </div>
-              <p className="text-xs text-gray-500 mt-2">
-                {language === 'ar'
-                  ? 'استعمل مجلداً محلياً تتم مزامنته مسبقاً بواسطة تطبيق Google Drive for Desktop.'
-                  : 'Utilisez un dossier local déjà synchronisé par Google Drive for Desktop.'}
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
-                <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">
-                  {language === 'ar' ? 'Fichier Drive' : 'Fichier Drive'}
-                </p>
-                <p className={cn('font-bold break-all', syncStatus?.googleDriveFileExists ? 'text-green-600' : 'text-gray-500')}>
-                  {syncStatus?.googleDriveFilePath || '-'}
-                </p>
-              </div>
-              <div className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
-                <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">
-                  {language === 'ar' ? 'Taille fichier Drive' : 'Taille fichier Drive'}
-                </p>
-                <p className="font-bold text-gray-900 dark:text-white">
-                  {syncStatus?.googleDriveFileSizeBytes ? `${(syncStatus.googleDriveFileSizeBytes / 1024).toFixed(2)} KB` : '-'}
-                </p>
-              </div>
-              <div className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
-                <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">
-                  {language === 'ar' ? 'Dernier import Drive' : 'Dernier import Drive'}
-                </p>
-                <p className="font-bold text-gray-900 dark:text-white">
-                  {syncStatus?.lastDrivePullAt ? formatDate(syncStatus.lastDrivePullAt) : '-'}
-                </p>
-              </div>
-              <div className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
-                <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">
-                  {language === 'ar' ? 'Dernier export Drive' : 'Dernier export Drive'}
-                </p>
-                <p className="font-bold text-gray-900 dark:text-white">
-                  {syncStatus?.lastDrivePushAt ? formatDate(syncStatus.lastDrivePushAt) : '-'}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex flex-col sm:flex-row gap-3">
-              <button
-                onClick={() => runGoogleDriveSync('push')}
-                disabled={isSyncLoading || syncUnavailableInCurrentMode || !googleDriveFolderPath.trim()}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg font-bold flex items-center justify-center gap-2 transition-all"
-              >
-                <RefreshCw className={cn('w-4 h-4', isSyncLoading && 'animate-spin')} />
-                {language === 'ar' ? 'Local vers Google Drive' : 'Local vers Google Drive'}
-              </button>
-              <button
-                onClick={() => runGoogleDriveSync('pull')}
-                disabled={isSyncLoading || syncUnavailableInCurrentMode || !googleDriveFolderPath.trim()}
-                className="flex-1 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg font-bold flex items-center justify-center gap-2 transition-all"
-              >
-                <RefreshCw className={cn('w-4 h-4', isSyncLoading && 'animate-spin')} />
-                {language === 'ar' ? 'Google Drive vers Local' : 'Google Drive vers Local'}
-              </button>
-            </div>
           </div>
         </div>
 

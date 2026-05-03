@@ -1,6 +1,7 @@
 import type { User } from '@supabase/supabase-js';
 import { getSupabasePublishableKey, getSupabaseUrl, isSupabaseConfigured, isSupabaseFunctionsBaseUrl } from '../lib/backend';
 import { AppUser, getCurrentSupabaseUserProfile, getStoredSupabaseSession, getSupabaseClient } from './supabase';
+import { flushPendingOperations, getOfflineSyncStatus } from './offlineSync';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
@@ -1412,24 +1413,12 @@ const registerAdditionalUser = async (payload: JsonRecord) => {
 };
 
 const getSyncStatus = async () => ({
-  data: {
-    localDbPath: '',
-    mongoConnected: false,
-    fileSizeBytes: 0,
-    lastPullAt: null,
-    lastPushAt: null,
-    lastDrivePullAt: null,
-    lastDrivePushAt: null,
-    collectionCounts: {},
-    googleDriveFolderPath: '',
-    googleDriveFilePath: '',
-    googleDriveFileExists: false,
-    googleDriveFileSizeBytes: 0,
-  },
+  data: getOfflineSyncStatus(),
 });
 
 const unsupportedSyncAction = async () => {
-  throw createApiError("La synchronisation locale/Google Drive n'est pas disponible en mode Supabase direct.", 501);
+  await flushPendingOperations();
+  return { data: getOfflineSyncStatus() };
 };
 
 const verifyLicense = async (payload: JsonRecord = {}) => ({
