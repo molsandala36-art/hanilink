@@ -1,0 +1,130 @@
+name: Publish GitHub Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-publish:
+    runs-on: windows-latest
+    env:
+      VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL != '' && secrets.VITE_API_BASE_URL || vars.VITE_API_BASE_URL }}
+      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL != '' && secrets.VITE_SUPABASE_URL || vars.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY != '' && secrets.VITE_SUPABASE_PUBLISHABLE_KEY || vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
+      VITE_ENABLE_LICENSE_ENFORCEMENT: ${{ secrets.VITE_ENABLE_LICENSE_ENFORCEMENT != '' && secrets.VITE_ENABLE_LICENSE_ENFORCEMENT || vars.VITE_ENABLE_LICENSE_ENFORCEMENT || 'true' }}
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Validate release environment
+        shell: pwsh
+        run: |
+          $required = @(
+            'VITE_API_BASE_URL',
+            'VITE_SUPABASE_URL',
+            'VITE_SUPABASE_PUBLISHABLE_KEY'
+          )
+          $missing = $required | Where-Object { [string]::IsNullOrWhiteSpace((Get-Item "Env:$_" -ErrorAction SilentlyContinue).Value) }
+          if ($missing.Count -gt 0) {
+            throw "Missing release environment variables: $($missing -join ', '). Configure them in GitHub repository Secrets or Variables."
+          }
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web assets
+        run: npm run build
+
+      - name: Build desktop installer
+        run: npm run build:server && npx electron-builder --win --x64 --publish never
+
+      - name: Sync Android project
+        run: npx cap sync android
+
+      - name: Build Android release
+        shell: pwsh
+        working-directory: android
+        run: .\gradlew.bat assembleRelease
+
+      - name: Prepare Android signing keystore
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        shell: pwsh
+        run: |
+          $keystorePath = Join-Path $env:RUNNER_TEMP 'release-keystore.jks'
+          [System.IO.File]::WriteAllBytes($keystorePath, [Convert]::FromBase64String('${{ secrets.ANDROID_KEYSTORE_BASE64 }}'))
+          "ANDROID_KEYSTORE_PATH=$keystorePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Sign Android APK
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        shell: pwsh
+        run: |
+          $buildTools = Get-ChildItem "$env:ANDROID_HOME\build-tools" -Directory | Sort-Object Name -Descending | Select-Object -First 1
+          if (-not $buildTools) {
+            throw "Android build-tools not found on runner."
+          }
+
+          $zipalign = Join-Path $buildTools.FullName 'zipalign.exe'
+          $apksigner = Join-Path $buildTools.FullName 'apksigner.bat'
+          $unsigned = Join-Path $env:GITHUB_WORKSPACE 'android\app\build\outputs\apk\release\app-release-unsigned.apk'
+          $aligned = Join-Path $env:GITHUB_WORKSPACE 'android\app\build\outputs\apk\release\app-release-aligned.apk'
+          $signed = Join-Path $env:GITHUB_WORKSPACE 'android\app\build\outputs\apk\release\app-release-signed.apk'
+
+          if (Test-Path $aligned) { Remove-Item $aligned -Force }
+          if (Test-Path $signed) { Remove-Item $signed -Force }
+
+          & $zipalign -f 4 $unsigned $aligned
+          & $apksigner sign `
+            --ks $env:ANDROID_KEYSTORE_PATH `
+            --ks-key-alias '${{ secrets.ANDROID_KEY_ALIAS }}' `
+            --ks-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} `
+            --key-pass pass:${{ secrets.ANDROID_KEY_PASSWORD }} `
+            --out $signed `
+            $aligned
+          & $apksigner verify --print-certs $signed
+
+      - name: Prepare release assets
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release-assets | Out-Null
+
+          $desktopInstaller = 'release\HaniLink Setup 0.0.0.exe'
+          $signedApk = 'android\app\build\outputs\apk\release\app-release-signed.apk'
+          $unsignedApk = 'android\app\build\outputs\apk\release\app-release-unsigned.apk'
+          $finalApk = 'release-assets\HaniLink-android-release.apk'
+
+          Copy-Item $desktopInstaller 'release-assets\HaniLink Setup 0.0.0.exe' -Force
+
+          if (Test-Path $signedApk) {
+            Copy-Item $signedApk $finalApk -Force
+          } elseif (Test-Path $unsignedApk) {
+            Copy-Item $unsignedApk $finalApk -Force
+          } else {
+            throw 'No Android APK was produced by the release workflow.'
+          }
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            release-assets/HaniLink Setup 0.0.0.exe
+            release-assets/HaniLink-android-release.apk
