@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, FileText, FileUp, Loader2, ReceiptText, RotateCcw } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import api from '../services/api';
 import { formatCurrency, formatDate } from '../lib/utils';
 import { Language, translations } from '../lib/translations';
@@ -33,6 +34,13 @@ interface SalesReturn {
   createdAt: string;
 }
 
+interface PosSale {
+  _id: string;
+  totalAmount: number;
+  tvaAmount: number;
+  createdAt: string;
+}
+
 const DOCUMENT_TYPES: DocumentType[] = ['quote', 'delivery_note', 'invoice', 'credit_note', 'purchase_note', 'transfer_note'];
 const SALES_TYPES: DocumentType[] = ['invoice', 'credit_note', 'delivery_note', 'quote'];
 const PURCHASE_TYPES: DocumentType[] = ['purchase_note'];
@@ -45,6 +53,7 @@ const csvEscape = (value: unknown) => {
 const FiscalJournal = () => {
   const [documents, setDocuments] = useState<FiscalDocument[]>([]);
   const [returns, setReturns] = useState<SalesReturn[]>([]);
+  const [posSales, setPosSales] = useState<PosSale[]>([]);
   const [loading, setLoading] = useState(true);
   const [language] = useState<Language>(() => (localStorage.getItem('language') as Language) || 'fr');
   const [selectedYear, setSelectedYear] = useState<string>('all');
@@ -55,14 +64,16 @@ const FiscalJournal = () => {
   useEffect(() => {
     const load = async () => {
       try {
-        const [documentResults, returnsResult] = await Promise.all([
+        const [documentResults, returnsResult, posSalesResult] = await Promise.all([
           Promise.all(DOCUMENT_TYPES.map((type) => api.get('/documents', { params: { type } }))),
           api.get('/returns'),
+          api.get('/sales'),
         ]);
 
         const mergedDocuments = documentResults.flatMap((result) => result.data || []);
         setDocuments(mergedDocuments);
         setReturns(Array.isArray(returnsResult.data) ? returnsResult.data : []);
+        setPosSales(Array.isArray(posSalesResult.data) ? posSalesResult.data : []);
       } catch (error) {
         console.error(error);
       } finally {
@@ -81,8 +92,11 @@ const FiscalJournal = () => {
     returns.forEach((entry) => {
       years.add(String(new Date(entry.createdAt || Date.now()).getFullYear()));
     });
+    posSales.forEach((sale) => {
+      years.add(String(new Date(sale.createdAt || Date.now()).getFullYear()));
+    });
     return Array.from(years).sort((left, right) => Number(right) - Number(left));
-  }, [documents, returns]);
+  }, [documents, returns, posSales]);
 
   const availableMonths = useMemo(
     () =>
@@ -121,9 +135,34 @@ const FiscalJournal = () => {
     [validatedDocuments]
   );
 
+  const filteredPosSales = useMemo(
+    () => posSales.filter((sale) => matchesPeriod(sale.createdAt)),
+    [posSales, selectedYear, selectedMonth]
+  );
+
+  const posSalesSubtotal = useMemo(
+    () =>
+      filteredPosSales.reduce((sum, sale) => {
+        const total = Number(sale.totalAmount || 0);
+        const tax = Number(sale.tvaAmount || 0);
+        return sum + (total - tax);
+      }, 0),
+    [filteredPosSales]
+  );
+
+  const posSalesVat = useMemo(
+    () => filteredPosSales.reduce((sum, sale) => sum + Number(sale.tvaAmount || 0), 0),
+    [filteredPosSales]
+  );
+
+  const posSalesTotal = useMemo(
+    () => filteredPosSales.reduce((sum, sale) => sum + Number(sale.totalAmount || 0), 0),
+    [filteredPosSales]
+  );
+
   const totalVatSales = useMemo(
-    () => vatSalesDocuments.reduce((sum, document) => sum + Number(document.taxAmount || 0), 0),
-    [vatSalesDocuments]
+    () => vatSalesDocuments.reduce((sum, document) => sum + Number(document.taxAmount || 0), 0) + posSalesVat,
+    [vatSalesDocuments, posSalesVat]
   );
 
   const totalVatPurchases = useMemo(
@@ -170,12 +209,12 @@ const FiscalJournal = () => {
 
   const exportMonthlyFiscalSummary = () => {
     const periodLabel = `${selectedYear === 'all' ? 'all-years' : selectedYear}-${selectedMonth === 'all' ? 'all-months' : selectedMonth}`;
-    const headers = ['section', 'metric', 'value'];
     const rows = [
       ['sales', 'validated_documents', vatSalesDocuments.length],
-      ['sales', 'subtotal_ht', vatSalesDocuments.reduce((sum, document) => sum + Number(document.subtotal || 0), 0).toFixed(2)],
+      ['sales', 'pos_sales_entries', filteredPosSales.length],
+      ['sales', 'subtotal_ht', (vatSalesDocuments.reduce((sum, document) => sum + Number(document.subtotal || 0), 0) + posSalesSubtotal).toFixed(2)],
       ['sales', 'tax_amount', totalVatSales.toFixed(2)],
-      ['sales', 'total_ttc', vatSalesDocuments.reduce((sum, document) => sum + Number(document.totalAmount || 0), 0).toFixed(2)],
+      ['sales', 'total_ttc', (vatSalesDocuments.reduce((sum, document) => sum + Number(document.totalAmount || 0), 0) + posSalesTotal).toFixed(2)],
       ['purchases', 'validated_documents', vatPurchaseDocuments.length],
       ['purchases', 'subtotal_ht', vatPurchaseDocuments.reduce((sum, document) => sum + Number(document.subtotal || 0), 0).toFixed(2)],
       ['purchases', 'tax_amount', totalVatPurchases.toFixed(2)],
@@ -184,6 +223,7 @@ const FiscalJournal = () => {
       ['returns', 'total_amount', totalReturns.toFixed(2)],
       ['compliance', 'fiscal_alerts', fiscalAlerts.length],
     ];
+    const headers = ['section', 'metric', 'value'];
 
     const csvContent = [headers, ...rows].map((row) => row.map(csvEscape).join(',')).join('\n');
     const blob = new Blob([`\uFEFF${csvContent}`], { type: 'text/csv;charset=utf-8;' });
@@ -195,6 +235,49 @@ const FiscalJournal = () => {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+  };
+
+  const exportMonthlyFiscalSummaryExcel = () => {
+    const periodLabel = `${selectedYear === 'all' ? 'all-years' : selectedYear}-${selectedMonth === 'all' ? 'all-months' : selectedMonth}`;
+    const rows = [
+      { section: 'sales', metric: 'validated_documents', value: vatSalesDocuments.length },
+      { section: 'sales', metric: 'pos_sales_entries', value: filteredPosSales.length },
+      {
+        section: 'sales',
+        metric: 'subtotal_ht',
+        value: Number(
+          vatSalesDocuments.reduce((sum, document) => sum + Number(document.subtotal || 0), 0) + posSalesSubtotal
+        ).toFixed(2),
+      },
+      { section: 'sales', metric: 'tax_amount', value: totalVatSales.toFixed(2) },
+      {
+        section: 'sales',
+        metric: 'total_ttc',
+        value: Number(
+          vatSalesDocuments.reduce((sum, document) => sum + Number(document.totalAmount || 0), 0) + posSalesTotal
+        ).toFixed(2),
+      },
+      { section: 'purchases', metric: 'validated_documents', value: vatPurchaseDocuments.length },
+      {
+        section: 'purchases',
+        metric: 'subtotal_ht',
+        value: vatPurchaseDocuments.reduce((sum, document) => sum + Number(document.subtotal || 0), 0).toFixed(2),
+      },
+      { section: 'purchases', metric: 'tax_amount', value: totalVatPurchases.toFixed(2) },
+      {
+        section: 'purchases',
+        metric: 'total_ttc',
+        value: vatPurchaseDocuments.reduce((sum, document) => sum + Number(document.totalAmount || 0), 0).toFixed(2),
+      },
+      { section: 'returns', metric: 'entries', value: filteredReturns.length },
+      { section: 'returns', metric: 'total_amount', value: totalReturns.toFixed(2) },
+      { section: 'compliance', metric: 'fiscal_alerts', value: fiscalAlerts.length },
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Fiscal Journal');
+    XLSX.writeFile(workbook, `hani-fiscal-summary-${periodLabel}.xlsx`);
   };
 
   if (loading) {
@@ -216,16 +299,25 @@ const FiscalJournal = () => {
           <p className="mt-1 text-gray-500 dark:text-gray-400">
             {language === 'ar'
               ? 'رؤية مركزية للوثائق المعتمدة والضريبة المرتبطة بها والتنبيهات المحاسبية.'
-              : 'Vue centralisee des documents valides, de la TVA associee et des alertes comptables.'}
+              : 'Vue centralisee des documents valides, des ventes POS, de la TVA associee et des alertes comptables.'}
           </p>
         </div>
-        <button
-          onClick={exportMonthlyFiscalSummary}
-          className="flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-3 font-bold text-gray-700 shadow-sm transition-all dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
-        >
-          <FileUp className="h-5 w-5" />
-          {language === 'ar' ? 'تصدير الملخص المحاسبي' : 'Exporter le resume comptable'}
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={exportMonthlyFiscalSummary}
+            className="flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-3 font-bold text-gray-700 shadow-sm transition-all dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+          >
+            <FileUp className="h-5 w-5" />
+            {language === 'ar' ? 'تصدير CSV' : 'Exporter CSV'}
+          </button>
+          <button
+            onClick={exportMonthlyFiscalSummaryExcel}
+            className="flex items-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 font-bold text-white shadow-sm transition-all hover:bg-emerald-700"
+          >
+            <FileUp className="h-5 w-5" />
+            {language === 'ar' ? 'تصدير Excel' : 'Exporter Excel'}
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -378,9 +470,10 @@ const FiscalJournal = () => {
           </h2>
           <div className="space-y-2 text-sm text-gray-600 dark:text-gray-300">
             <div className="flex justify-between"><span>{language === 'ar' ? 'Documents ventes validés' : 'Documents ventes valides'}</span><strong>{vatSalesDocuments.length}</strong></div>
-            <div className="flex justify-between"><span>{language === 'ar' ? 'Base HT ventes' : 'Base HT ventes'}</span><strong>{formatCurrency(vatSalesDocuments.reduce((sum, document) => sum + Number(document.subtotal || 0), 0))}</strong></div>
+            <div className="flex justify-between"><span>{language === 'ar' ? 'Ventes POS' : 'Ventes POS'}</span><strong>{filteredPosSales.length}</strong></div>
+            <div className="flex justify-between"><span>{language === 'ar' ? 'Base HT ventes' : 'Base HT ventes'}</span><strong>{formatCurrency(vatSalesDocuments.reduce((sum, document) => sum + Number(document.subtotal || 0), 0) + posSalesSubtotal)}</strong></div>
             <div className="flex justify-between"><span>{language === 'ar' ? 'TVA ventes' : 'TVA ventes'}</span><strong>{formatCurrency(totalVatSales)}</strong></div>
-            <div className="flex justify-between"><span>{language === 'ar' ? 'TTC ventes' : 'TTC ventes'}</span><strong>{formatCurrency(vatSalesDocuments.reduce((sum, document) => sum + Number(document.totalAmount || 0), 0))}</strong></div>
+            <div className="flex justify-between"><span>{language === 'ar' ? 'TTC ventes' : 'TTC ventes'}</span><strong>{formatCurrency(vatSalesDocuments.reduce((sum, document) => sum + Number(document.totalAmount || 0), 0) + posSalesTotal)}</strong></div>
           </div>
         </div>
 
