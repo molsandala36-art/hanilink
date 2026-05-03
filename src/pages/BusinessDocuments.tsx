@@ -555,7 +555,7 @@ const BusinessDocuments = () => {
             ? [item.sourcePlace, item.destinationPlace].filter(Boolean).join(' -> ')
             : undefined,
       })),
-    });
+    }, { autoPrint: false });
 
     return {
       title: `${documentTitle} - ${doc.documentNumber}`,

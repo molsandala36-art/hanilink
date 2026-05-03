@@ -45,6 +45,10 @@ export interface PrintableUserLegalInfo {
   rc?: string;
 }
 
+interface PrintableDocumentHtmlOptions {
+  autoPrint?: boolean;
+}
+
 export const defaultDocumentStyleSettings: DocumentStyleSettings = {
   logoUrl: '',
   fontSize: '14px',
@@ -304,8 +308,10 @@ function buildCompactTemplate(settings: DocumentStyleSettings, user: PrintableUs
 export function buildPrintableDocumentHtml(
   settings: DocumentStyleSettings,
   user: PrintableUserLegalInfo,
-  doc: PrintableDocument
+  doc: PrintableDocument,
+  options: PrintableDocumentHtmlOptions = {}
 ) {
+  const autoPrint = options.autoPrint !== false;
   const template =
     settings.documentDesign === 'classic'
       ? buildClassicTemplate(settings, user, doc)
@@ -319,6 +325,10 @@ export function buildPrintableDocumentHtml(
         <title>${doc.title} - ${doc.documentNumber}</title>
         <style>
           * { box-sizing: border-box; }
+          html {
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
           body {
             margin: 0;
             padding: 28px;
@@ -326,6 +336,8 @@ export function buildPrintableDocumentHtml(
             font-size: ${settings.fontSize};
             color: #111827;
             background: #f3f4f6;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
           }
           .sheet {
             max-width: 920px;
@@ -333,6 +345,8 @@ export function buildPrintableDocumentHtml(
             background: #fff;
             overflow: hidden;
             box-shadow: 0 20px 60px rgba(15, 23, 42, 0.12);
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
           }
           .brand-logo {
             display: inline-flex;
@@ -461,14 +475,81 @@ export function buildPrintableDocumentHtml(
           .compact-lower { margin-top: 18px; display: grid; grid-template-columns: 1fr 300px; gap: 18px; align-items: start; }
           .compact-legal { padding: 16px; border: 1px solid #e5e7eb; border-radius: 18px; background: #fff; }
           @media print {
-            body { background: white; padding: 0; }
-            .sheet { box-shadow: none; border-radius: 0; }
+            @page {
+              size: A4;
+              margin: 10mm;
+            }
+            html, body {
+              background: white !important;
+              margin: 0;
+              padding: 0;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+            .sheet {
+              max-width: none;
+              width: 100%;
+              box-shadow: none !important;
+              border-radius: 0 !important;
+              border: 0 !important;
+              overflow: visible;
+              break-inside: avoid;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+            .hero,
+            .classic-topbar,
+            .compact-table thead th,
+            .brand-mark,
+            .totals,
+            .meta-card,
+            .notes,
+            .compact-grid,
+            .compact-legal,
+            .modern thead th,
+            .modern tbody tr:nth-child(even) td,
+            .classic-table thead th {
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            .hero {
+              background: ${settings.primaryColor} !important;
+              color: #ffffff !important;
+            }
+            .brand-mark {
+              background: ${settings.primaryColor} !important;
+              color: #ffffff !important;
+            }
+            .modern thead th {
+              background: #111827 !important;
+              color: #f9fafb !important;
+            }
+            .compact-table thead th {
+              background: ${settings.primaryColor} !important;
+              color: #ffffff !important;
+            }
+            .classic-topbar {
+              background: ${settings.primaryColor} !important;
+            }
+            .totals {
+              background: #fff7ed !important;
+              border-color: #fed7aa !important;
+            }
+            .meta-card,
+            .notes,
+            .compact-grid {
+              background: #f9fafb !important;
+            }
+            .modern tbody tr:nth-child(even) td,
+            .classic-table thead th {
+              background: #f8fafc !important;
+            }
           }
         </style>
       </head>
       <body>
         ${template}
-        <script>window.onload = () => { window.print(); setTimeout(() => window.close(), 400); }</script>
+        ${autoPrint ? '<script>window.onload = () => { window.print(); setTimeout(() => window.close(), 400); }</script>' : ''}
       </body>
     </html>
   `;
