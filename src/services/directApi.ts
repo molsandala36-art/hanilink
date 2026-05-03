@@ -120,11 +120,14 @@ const parseId = (value: any) => {
 
 const pickCreatedAt = (row: JsonRecord) => row.createdAt || row.created_at || new Date().toISOString();
 
-const normalizeRecord = (row: JsonRecord): JsonRecord => ({
-  ...row,
-  _id: parseId(row.id || row._id),
-  createdAt: pickCreatedAt(row),
-});
+const normalizeRecord = (row?: JsonRecord | null): JsonRecord => {
+  const safeRow = row && typeof row === 'object' ? row : {};
+  return {
+    ...safeRow,
+    _id: parseId(safeRow.id || safeRow._id),
+    createdAt: pickCreatedAt(safeRow),
+  };
+};
 
 const isMissingSupabaseResourceError = (error: any) => {
   const message = String(error?.message || '').toLowerCase();
@@ -815,7 +818,7 @@ const updateProduct = async (id: string, payload: JsonRecord) => {
       row
     )
   );
-  return { data: productFromRow(data as JsonRecord) };
+  return { data: productFromRow((data as JsonRecord) || { id, ...row }) };
 };
 
 const deleteProduct = async (id: string) => {

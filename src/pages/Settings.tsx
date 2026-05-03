@@ -153,28 +153,34 @@ const Settings = () => {
       const productsRes = await api.get('/products');
       const products = Array.isArray(productsRes.data) ? productsRes.data.filter(Boolean) : [];
 
-      await Promise.all(
-        products
-          .map((product: any) => {
-            const productId = product?._id || product?.id;
-            if (!productId) return null;
+      const productUpdates = products
+        .map((product: any) => {
+          const productId = product?._id || product?.id;
+          if (!productId) return null;
 
-            return api.put(`/products/${productId}`, {
-              name: product.name || '',
-              price: Number(product.price || 0),
-              purchasePrice: Number(product.purchasePrice || 0),
-              stock: Number(product.stock || 0),
-              category: product.category || 'General',
-              tvaRate: parsedVatRate,
-              supplierTva: parsedVatRate,
-              barcode: product.barcode || '',
-              place: product.place || '',
-              photoUrl: product.photoUrl || '',
-              supplierId: product.supplierId || ''
-            });
-          })
-          .filter(Boolean)
-      );
+          return api.put(`/products/${productId}`, {
+            name: product?.name || '',
+            price: Number(product?.price || 0),
+            purchasePrice: Number(product?.purchasePrice || 0),
+            stock: Number(product?.stock || 0),
+            category: product?.category || 'General',
+            tvaRate: parsedVatRate,
+            supplierTva: parsedVatRate,
+            barcode: product?.barcode || '',
+            place: product?.place || '',
+            photoUrl: product?.photoUrl || '',
+            supplierId: product?.supplierId || ''
+          });
+        })
+        .filter(Boolean) as Promise<any>[];
+
+      const results = await Promise.allSettled(productUpdates);
+      const failedUpdates = results.filter((result) => result.status === 'rejected');
+
+      if (failedUpdates.length > 0) {
+        console.error('Some VAT updates failed', failedUpdates);
+        throw new Error(`${failedUpdates.length} product updates failed`);
+      }
 
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 3000);

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { FileText, Plus, Search, Edit2, Trash2, Printer, Loader2, X, FileUp } from 'lucide-react';
+import { Eye, FileText, Plus, Search, Edit2, Trash2, Printer, Loader2, X, FileUp } from 'lucide-react';
 import api from '../services/api';
 import { formatCurrency, formatDate, getDefaultVatRate } from '../lib/utils';
 import { translations, Language } from '../lib/translations';
@@ -55,6 +55,11 @@ interface BusinessDocument {
   updatedAt?: string;
 }
 
+interface PrintPreviewState {
+  title: string;
+  html: string;
+}
+
 const TYPE_KEYS: Record<DocumentType, string> = {
   quote: 'quote',
   delivery_note: 'delivery_note',
@@ -102,10 +107,12 @@ const BusinessDocuments = () => {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingDocument, setEditingDocument] = useState<BusinessDocument | null>(null);
+  const [printPreview, setPrintPreview] = useState<PrintPreviewState | null>(null);
   const [activeType, setActiveType] = useState<DocumentType>('quote');
   const [searchTerm, setSearchTerm] = useState('');
   const [formData, setFormData] = useState(createEmptyForm);
   const [language] = useState<Language>(() => (localStorage.getItem('language') as Language) || 'fr');
+  const previewFrameRef = useRef<HTMLIFrameElement | null>(null);
 
   const t = translations[language];
   const isTransferNote = activeType === 'transfer_note';
@@ -516,11 +523,8 @@ const BusinessDocuments = () => {
     URL.revokeObjectURL(url);
   };
 
-  const printDocument = (doc: BusinessDocument) => {
+  const buildDocumentPreview = (doc: BusinessDocument) => {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
-
     const documentTitle = t[TYPE_KEYS[doc.documentType]];
     const taxRate = doc.subtotal > 0 ? ((doc.taxAmount / doc.subtotal) * 100).toFixed(2) : getDefaultVatRate();
     const paymentMethodLabel = doc.paymentMethod ? (t[doc.paymentMethod as keyof typeof t] as string | undefined) || doc.paymentMethod : undefined;
@@ -553,8 +557,21 @@ const BusinessDocuments = () => {
       })),
     });
 
-    printWindow.document.write(html);
-    printWindow.document.close();
+    return {
+      title: `${documentTitle} - ${doc.documentNumber}`,
+      html,
+    };
+  };
+
+  const openPrintPreview = (doc: BusinessDocument) => {
+    setPrintPreview(buildDocumentPreview(doc));
+  };
+
+  const handlePreviewPrint = () => {
+    const frameWindow = previewFrameRef.current?.contentWindow;
+    if (!frameWindow) return;
+    frameWindow.focus();
+    frameWindow.print();
   };
 
   return (
@@ -710,10 +727,11 @@ const BusinessDocuments = () => {
                           </button>
                         )}
                         <button
-                          onClick={() => printDocument(doc)}
+                          onClick={() => openPrintPreview(doc)}
                           className="p-2 text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-xl transition-colors"
+                          title={language === 'ar' ? 'معاينة قبل الطباعة' : 'Apercu avant impression'}
                         >
-                          <Printer className="w-4 h-4" />
+                          <Eye className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => openEditModal(doc)}
@@ -1136,6 +1154,47 @@ const BusinessDocuments = () => {
               </div>
             </form>
           </motion.div>
+        </div>
+      )}
+
+      {printPreview && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-6xl h-[90vh] flex flex-col overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-4 shrink-0">
+              <div className="min-w-0">
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
+                  {language === 'ar' ? 'معاينة قبل الطباعة' : 'Apercu avant impression'}
+                </h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400 truncate">{printPreview.title}</p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={handlePreviewPrint}
+                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2 text-white hover:bg-emerald-600 transition-colors"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>{language === 'ar' ? 'طباعة' : 'Imprimer'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrintPreview(null)}
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-300 dark:border-slate-700 px-4 py-2 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                  <span>{language === 'ar' ? 'إغلاق' : 'Fermer'}</span>
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 bg-slate-100 dark:bg-slate-950 p-4 min-h-0">
+              <iframe
+                ref={previewFrameRef}
+                title={printPreview.title}
+                srcDoc={printPreview.html}
+                className="w-full h-full rounded-2xl bg-white border border-slate-200 dark:border-slate-800"
+              />
+            </div>
+          </div>
         </div>
       )}
     </div>
