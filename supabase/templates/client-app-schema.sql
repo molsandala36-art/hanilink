@@ -14,10 +14,32 @@ create or replace function public.current_shop_owner_id()
 returns uuid
 language sql
 stable
+security definer
+set search_path = public
 as $$
-  select coalesce(au.company_owner_id, au.id)
+  select coalesce(au.company_owner_id, au.id, auth.uid())
   from public.app_users au
   where au.id = auth.uid()
+$$;
+
+create or replace function public.row_belongs_to_current_shop(target_user_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.current_shop_owner_id() = coalesce(au.company_owner_id, au.id, target_user_id)
+  from public.app_users au
+  where au.id = target_user_id
+  union all
+  select public.current_shop_owner_id() = target_user_id
+  where not exists (
+    select 1
+    from public.app_users au
+    where au.id = target_user_id
+  )
+  limit 1
 $$;
 
 create table if not exists public.app_users (
@@ -97,6 +119,7 @@ create table if not exists public.products (
 create table if not exists public.sales (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
+  created_by uuid null references auth.users(id) on delete set null,
   items jsonb not null default '[]'::jsonb,
   total_amount numeric(12,2) not null default 0,
   tva_amount numeric(12,2) not null default 0,
@@ -255,7 +278,7 @@ alter table public.business_documents enable row level security;
 drop policy if exists "app_users_select_own" on public.app_users;
 create policy "app_users_select_own"
 on public.app_users for select
-using (auth.uid() = id);
+using (public.current_shop_owner_id() = coalesce(company_owner_id, id));
 
 drop policy if exists "app_users_insert_own" on public.app_users;
 create policy "app_users_insert_own"
@@ -265,59 +288,59 @@ with check (auth.uid() = id);
 drop policy if exists "app_users_update_own" on public.app_users;
 create policy "app_users_update_own"
 on public.app_users for update
-using (auth.uid() = id)
-with check (auth.uid() = id);
+using (public.current_shop_owner_id() = coalesce(company_owner_id, id))
+with check (public.current_shop_owner_id() = coalesce(company_owner_id, id));
 
 drop policy if exists "suppliers_owner_all" on public.suppliers;
 create policy "suppliers_owner_all"
 on public.suppliers for all
 using (public.current_shop_owner_id() = user_id)
-with check (public.current_shop_owner_id() = user_id);
+with check (public.row_belongs_to_current_shop(user_id));
 
 drop policy if exists "customers_owner_all" on public.customers;
 create policy "customers_owner_all"
 on public.customers for all
-using (public.current_shop_owner_id() = user_id)
-with check (public.current_shop_owner_id() = user_id);
+using (public.row_belongs_to_current_shop(user_id))
+with check (public.row_belongs_to_current_shop(user_id));
 
 drop policy if exists "customer_credits_owner_all" on public.customer_credits;
 create policy "customer_credits_owner_all"
 on public.customer_credits for all
-using (public.current_shop_owner_id() = user_id)
-with check (public.current_shop_owner_id() = user_id);
+using (public.row_belongs_to_current_shop(user_id))
+with check (public.row_belongs_to_current_shop(user_id));
 
 drop policy if exists "products_owner_all" on public.products;
 create policy "products_owner_all"
 on public.products for all
-using (public.current_shop_owner_id() = user_id)
-with check (public.current_shop_owner_id() = user_id);
+using (public.row_belongs_to_current_shop(user_id))
+with check (public.row_belongs_to_current_shop(user_id));
 
 drop policy if exists "sales_owner_all" on public.sales;
 create policy "sales_owner_all"
 on public.sales for all
-using (public.current_shop_owner_id() = user_id)
-with check (public.current_shop_owner_id() = user_id);
+using (public.row_belongs_to_current_shop(user_id))
+with check (public.row_belongs_to_current_shop(user_id));
 
 drop policy if exists "sales_returns_owner_all" on public.sales_returns;
 create policy "sales_returns_owner_all"
 on public.sales_returns for all
-using (public.current_shop_owner_id() = user_id)
-with check (public.current_shop_owner_id() = user_id);
+using (public.row_belongs_to_current_shop(user_id))
+with check (public.row_belongs_to_current_shop(user_id));
 
 drop policy if exists "expenses_owner_all" on public.expenses;
 create policy "expenses_owner_all"
 on public.expenses for all
-using (public.current_shop_owner_id() = user_id)
-with check (public.current_shop_owner_id() = user_id);
+using (public.row_belongs_to_current_shop(user_id))
+with check (public.row_belongs_to_current_shop(user_id));
 
 drop policy if exists "purchase_orders_owner_all" on public.purchase_orders;
 create policy "purchase_orders_owner_all"
 on public.purchase_orders for all
-using (public.current_shop_owner_id() = user_id)
-with check (public.current_shop_owner_id() = user_id);
+using (public.row_belongs_to_current_shop(user_id))
+with check (public.row_belongs_to_current_shop(user_id));
 
 drop policy if exists "business_documents_owner_all" on public.business_documents;
 create policy "business_documents_owner_all"
 on public.business_documents for all
-using (public.current_shop_owner_id() = user_id)
-with check (public.current_shop_owner_id() = user_id);
+using (public.row_belongs_to_current_shop(user_id))
+with check (public.row_belongs_to_current_shop(user_id));
