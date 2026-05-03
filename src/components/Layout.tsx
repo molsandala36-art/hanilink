@@ -23,14 +23,16 @@ import {
   X,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { CurrentAppUser } from '../lib/currentUser';
 import { cn } from '../lib/utils';
 import { Language, translations } from '../lib/translations';
 
 interface LayoutProps {
   onLogout: () => void;
+  currentUser: CurrentAppUser | null;
 }
 
-const Layout = ({ onLogout }: LayoutProps) => {
+const Layout = ({ onLogout, currentUser }: LayoutProps) => {
   const location = useLocation();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
@@ -42,7 +44,7 @@ const Layout = ({ onLogout }: LayoutProps) => {
     return true;
   });
 
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  const user = currentUser ?? { name: '', shopName: '', role: 'employee' as const };
   const t = translations[language];
   const isPosRoute = location.pathname === '/pos';
 
@@ -102,7 +104,7 @@ const Layout = ({ onLogout }: LayoutProps) => {
     { name: t.users, href: '/users', icon: Users, roles: ['admin'] },
   ];
 
-  const filteredNavigation = navigation.filter((item) => item.roles.includes(user.role || 'employee'));
+  const filteredNavigation = navigation.filter((item) => item.roles.includes(user.role));
 
   const toggleLanguage = () => {
     setLanguage((current) => (current === 'fr' ? 'ar' : 'fr'));

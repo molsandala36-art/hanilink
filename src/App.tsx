@@ -23,12 +23,13 @@ import ReturnsManagement from './pages/ReturnsManagement';
 import Layout from './components/Layout';
 import { getDeviceIdentity } from './lib/hwid';
 import { getBackendSetupIssue, isLicenseEnforcementEnabled, isSupabaseConfigured } from './lib/backend';
+import { CurrentAppUser, getStoredCurrentUser, normalizeCurrentUser } from './lib/currentUser';
 import api from './services/api';
 import { getCurrentSupabaseUserProfile, getStoredSupabaseSession, getSupabaseClient, setCachedSupabaseSession, signOutFromSupabase } from './services/supabase';
 
-const ProtectedRoute = ({ children, roles }: { children: React.ReactNode, roles: string[] }) => {
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
-  if (!roles.includes(user.role || 'employee')) {
+const ProtectedRoute = ({ children, roles, currentUser }: { children: React.ReactNode, roles: string[], currentUser: CurrentAppUser | null }) => {
+  const userRole = currentUser?.role || 'employee';
+  if (!roles.includes(userRole)) {
     return <Navigate to="/" />;
   }
   return <>{children}</>;
@@ -122,6 +123,7 @@ const LicenseGuard = ({ children }: { children: React.ReactNode }) => {
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(!!localStorage.getItem('token'));
+  const [currentUser, setCurrentUser] = useState<CurrentAppUser | null>(() => getStoredCurrentUser());
 
   useEffect(() => {
     if (!isSupabaseConfigured()) {
@@ -136,16 +138,19 @@ function App() {
           localStorage.setItem('token', session.access_token);
           const profile = await getCurrentSupabaseUserProfile(session.user);
           localStorage.setItem('user', JSON.stringify(profile));
+          setCurrentUser(normalizeCurrentUser(profile));
           setIsAuthenticated(true);
         } else {
           localStorage.removeItem('token');
           localStorage.removeItem('user');
+          setCurrentUser(null);
           setIsAuthenticated(false);
         }
       } catch (err) {
         console.error(err);
         localStorage.removeItem('token');
         localStorage.removeItem('user');
+        setCurrentUser(null);
         setIsAuthenticated(false);
       }
     };
@@ -164,6 +169,7 @@ function App() {
         try {
           const profile = await getCurrentSupabaseUserProfile(session.user);
           localStorage.setItem('user', JSON.stringify(profile));
+          setCurrentUser(normalizeCurrentUser(profile));
         } catch (err) {
           console.error(err);
         }
@@ -171,6 +177,7 @@ function App() {
       } else {
         localStorage.removeItem('token');
         localStorage.removeItem('user');
+        setCurrentUser(null);
         setIsAuthenticated(false);
       }
     });
@@ -183,6 +190,7 @@ function App() {
   useEffect(() => {
     const handleStorageChange = () => {
       setIsAuthenticated(!!localStorage.getItem('token'));
+      setCurrentUser(getStoredCurrentUser());
     };
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
@@ -191,6 +199,7 @@ function App() {
   const login = (token: string, user: any) => {
     localStorage.setItem('token', token);
     localStorage.setItem('user', JSON.stringify(user));
+    setCurrentUser(normalizeCurrentUser(user));
     setIsAuthenticated(true);
   };
 
@@ -198,6 +207,7 @@ function App() {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     localStorage.removeItem('hani_license_active');
+    setCurrentUser(null);
     setIsAuthenticated(false);
 
     if (isSupabaseConfigured()) {
@@ -219,70 +229,70 @@ function App() {
           <Route path="/" element={
             isAuthenticated ? (
               <LicenseGuard>
-                <Layout onLogout={logout} />
+                <Layout onLogout={logout} currentUser={currentUser} />
               </LicenseGuard>
             ) : <Navigate to="/login" />
           }>
             <Route index element={<Dashboard />} />
             <Route path="products" element={
-              <ProtectedRoute roles={['admin']}>
+              <ProtectedRoute roles={['admin']} currentUser={currentUser}>
                 <Products />
               </ProtectedRoute>
             } />
             <Route path="suppliers" element={
-              <ProtectedRoute roles={['admin']}>
+              <ProtectedRoute roles={['admin']} currentUser={currentUser}>
                 <Suppliers />
               </ProtectedRoute>
             } />
             <Route path="purchase-orders" element={
-              <ProtectedRoute roles={['admin']}>
+              <ProtectedRoute roles={['admin']} currentUser={currentUser}>
                 <PurchaseOrders />
               </ProtectedRoute>
             } />
             <Route path="expenses" element={
-              <ProtectedRoute roles={['admin']}>
+              <ProtectedRoute roles={['admin']} currentUser={currentUser}>
                 <Expenses />
               </ProtectedRoute>
             } />
             <Route path="documents" element={
-              <ProtectedRoute roles={['admin']}>
+              <ProtectedRoute roles={['admin']} currentUser={currentUser}>
                 <BusinessDocuments />
               </ProtectedRoute>
             } />
             <Route path="pos" element={<POS />} />
             <Route path="sales" element={<SalesHistory />} />
             <Route path="analytics" element={
-              <ProtectedRoute roles={['admin']}>
+              <ProtectedRoute roles={['admin']} currentUser={currentUser}>
                 <AnalyticsPage />
               </ProtectedRoute>
             } />
             <Route path="ai-insights" element={
-              <ProtectedRoute roles={['admin']}>
+              <ProtectedRoute roles={['admin']} currentUser={currentUser}>
                 <AIInsights />
               </ProtectedRoute>
             } />
             <Route path="clients" element={
-              <ProtectedRoute roles={['admin']}>
+              <ProtectedRoute roles={['admin']} currentUser={currentUser}>
                 <ClientsManagement />
               </ProtectedRoute>
             } />
             <Route path="credits" element={
-              <ProtectedRoute roles={['admin']}>
+              <ProtectedRoute roles={['admin']} currentUser={currentUser}>
                 <CreditsManagement />
               </ProtectedRoute>
             } />
             <Route path="returns" element={
-              <ProtectedRoute roles={['admin', 'employee']}>
+              <ProtectedRoute roles={['admin', 'employee']} currentUser={currentUser}>
                 <ReturnsManagement />
               </ProtectedRoute>
             } />
             <Route path="settings" element={
-              <ProtectedRoute roles={['admin']}>
+              <ProtectedRoute roles={['admin']} currentUser={currentUser}>
                 <Settings />
               </ProtectedRoute>
             } />
             <Route path="users" element={
-              <ProtectedRoute roles={['admin']}>
+              <ProtectedRoute roles={['admin']} currentUser={currentUser}>
                 <Users />
               </ProtectedRoute>
             } />
