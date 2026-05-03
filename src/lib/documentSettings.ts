@@ -1,4 +1,5 @@
 import { formatCurrency, formatDate } from './utils';
+import { BRAND_LOGO_URL } from './branding';
 
 export type DocumentDesign = 'modern' | 'classic' | 'compact';
 
@@ -50,7 +51,7 @@ interface PrintableDocumentHtmlOptions {
 }
 
 export const defaultDocumentStyleSettings: DocumentStyleSettings = {
-  logoUrl: '',
+  logoUrl: BRAND_LOGO_URL,
   fontSize: '14px',
   primaryColor: '#f97316',
   documentDesign: 'modern',

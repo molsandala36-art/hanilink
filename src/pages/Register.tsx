@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Store, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import api from '../services/api';
 import { getBackendSetupIssue, isSupabaseConfigured } from '../lib/backend';
+import { BRAND_INTRO_VIDEO_URL, BRAND_LOGO_URL, BRAND_NAME } from '../lib/branding';
 import TenantField from '../components/TenantField';
 import { getStoredTenantSlug, setPreferredTenantSlug } from '../lib/tenant';
 import { signUpWithSupabase } from '../services/supabase';
@@ -53,10 +54,18 @@ const Register = ({ onLogin }: RegisterProps) => {
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center p-4 transition-colors duration-300">
       <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 border border-gray-100 dark:border-gray-700">
         <div className="flex flex-col items-center mb-8">
-          <div className="bg-orange-500 p-3 rounded-2xl mb-4">
-            <Store className="text-white w-8 h-8" />
+          <div className="w-full mb-5 overflow-hidden rounded-2xl border border-gray-200 bg-slate-950 shadow-inner dark:border-gray-700">
+            <video
+              className="h-40 w-full object-cover"
+              src={BRAND_INTRO_VIDEO_URL}
+              autoPlay
+              loop
+              muted
+              playsInline
+            />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Inscription HaniLink</h1>
+          <img src={BRAND_LOGO_URL} alt={BRAND_NAME} className="mb-4 h-16 w-16 rounded-2xl bg-white p-1 shadow-sm" />
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Inscription {BRAND_NAME}</h1>
           <p className="text-gray-500 dark:text-gray-400">Commencez à gérer votre boutique dès aujourd'hui</p>
         </div>
 

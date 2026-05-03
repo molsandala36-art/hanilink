@@ -36,12 +36,33 @@ const ProtectedRoute = ({ children, roles, currentUser }: { children: React.Reac
   return <>{children}</>;
 };
 
-const LicenseGuard = ({ children }: { children: React.ReactNode }) => {
+const LicenseGuard = ({
+  children,
+  currentUser,
+}: {
+  children: React.ReactNode;
+  currentUser: CurrentAppUser | null;
+}) => {
   const [isActivated, setIsActivated] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
   const [setupError, setSetupError] = useState('');
 
   useEffect(() => {
+    const userId = currentUser?.id || currentUser?._id || '';
+    const companyOwnerId = currentUser?.companyOwnerId || '';
+    const isEmployeeLinkedToAdmin =
+      currentUser?.role === 'employee' &&
+      Boolean(userId) &&
+      Boolean(companyOwnerId) &&
+      userId !== companyOwnerId;
+
+    if (isEmployeeLinkedToAdmin) {
+      setIsActivated(true);
+      setLoading(false);
+      setSetupError('');
+      return;
+    }
+
     if (!isLicenseEnforcementEnabled) {
       setIsActivated(true);
       setLoading(false);
@@ -104,7 +125,7 @@ const LicenseGuard = ({ children }: { children: React.ReactNode }) => {
       isMounted = false;
       window.clearTimeout(timeoutId);
     };
-  }, []);
+  }, [currentUser]);
 
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-gray-50">Loading license...</div>;
   if (setupError) {
@@ -229,7 +250,7 @@ function App() {
         
           <Route path="/" element={
             isAuthenticated ? (
-              <LicenseGuard>
+              <LicenseGuard currentUser={currentUser}>
                 <Layout onLogout={logout} currentUser={currentUser} />
               </LicenseGuard>
             ) : <Navigate to="/login" />

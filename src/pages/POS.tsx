@@ -18,6 +18,7 @@ import {
 import Fuse from 'fuse.js';
 import { motion } from 'motion/react';
 import api from '../services/api';
+import { BRAND_LOGO_URL } from '../lib/branding';
 import { formatCurrency, formatDate, cn } from '../lib/utils';
 import { translations, Language } from '../lib/translations';
 import BarcodeScannerModal from '../components/BarcodeScannerModal';
@@ -85,10 +86,8 @@ const POS = () => {
       setLanguage((localStorage.getItem('language') as Language) || 'fr');
     };
     window.addEventListener('storage', handleLangChange);
-    const interval = setInterval(handleLangChange, 1000); // Poll for language changes
     return () => {
       window.removeEventListener('storage', handleLangChange);
-      clearInterval(interval);
     };
   }, []);
 
@@ -170,7 +169,7 @@ const POS = () => {
   const handlePrintReceipt = (sale: any) => {
     const savedSettings = localStorage.getItem('receiptSettings');
     const settings = savedSettings ? JSON.parse(savedSettings) : {
-      logoUrl: '',
+      logoUrl: BRAND_LOGO_URL,
       fontSize: '14px',
       primaryColor: '#f97316'
     };
@@ -355,7 +354,7 @@ const POS = () => {
   };
 
   return (
-    <div className="h-full min-h-0 min-w-0 flex flex-col xl:flex-row gap-6 overflow-hidden">
+    <div className="h-full min-h-0 min-w-0 flex flex-col lg:flex-row gap-6 overflow-hidden">
       {/* Product Selection */}
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
         <div className="mb-6">
@@ -442,7 +441,7 @@ const POS = () => {
       </div>
 
       {/* Cart / Checkout */}
-      <div className="w-full xl:w-[26rem] xl:max-w-[34vw] xl:h-full shrink-0 flex flex-col min-h-[24rem] xl:min-h-0 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
+      <div className="w-full lg:w-[24rem] lg:max-w-[32rem] lg:h-full shrink-0 self-stretch flex flex-col min-h-[24rem] lg:min-h-0 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
         <div className="p-6 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/50">
           <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
             <ShoppingCart className="w-5 h-5 text-orange-500" />
@@ -555,8 +554,8 @@ const POS = () => {
               <span>{t.total}</span>
               <motion.span 
                 key={total}
-                initial={{ scale: 1.1, color: '#f97316' }}
-                animate={{ scale: 1, color: 'inherit' }}
+                initial={{ scale: 1.1 }}
+                animate={{ scale: 1 }}
                 className="text-orange-500"
               >
                 {formatCurrency(total)}

@@ -16,7 +16,6 @@ import {
   RotateCcw,
   Settings,
   ShoppingCart,
-  Store,
   Sun,
   Truck,
   Users,
@@ -25,6 +24,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { CurrentAppUser } from '../lib/currentUser';
+import { BRAND_LOGO_URL, BRAND_NAME } from '../lib/branding';
 import { cn } from '../lib/utils';
 import { Language, translations } from '../lib/translations';
 
@@ -149,10 +149,12 @@ const Layout = ({ onLogout, currentUser }: LayoutProps) => {
         )}
       >
         <div className="flex shrink-0 items-center gap-3 p-6">
-          <div className="rounded-lg bg-orange-500 p-2">
-            <Store className="h-6 w-6 text-white" />
-          </div>
-          {sidebarExpanded && <span className="text-xl font-bold text-gray-800 dark:text-white">HaniLink</span>}
+          <img
+            src={BRAND_LOGO_URL}
+            alt={BRAND_NAME}
+            className="h-12 w-12 rounded-xl object-contain bg-white p-1 shadow-sm"
+          />
+          {sidebarExpanded && <span className="text-xl font-bold text-gray-800 dark:text-white">{BRAND_NAME}</span>}
         </div>
 
         <nav className="flex-1 space-y-2 overflow-y-auto px-4 pb-4">

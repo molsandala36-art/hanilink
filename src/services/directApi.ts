@@ -238,6 +238,11 @@ const getCurrentAuthUser = async (): Promise<User> => {
 
 const getCurrentUser = async (): Promise<AppUser> => getCurrentSupabaseUserProfile(await getCurrentAuthUser());
 
+const getShopScopedUserId = async () => {
+  const user = await getCurrentUser();
+  return user.companyOwnerId || user.id;
+};
+
 const productFromRow = (row: JsonRecord) => {
   const normalized = normalizeRecord(row);
   return {
@@ -259,7 +264,7 @@ const productFromRow = (row: JsonRecord) => {
 };
 
 const productToRow = async (payload: JsonRecord) => {
-  const user = await getCurrentUser();
+  const shopUserId = await getShopScopedUserId();
   return {
     name: payload.name,
     price: Number(payload.price || 0),
@@ -272,7 +277,7 @@ const productToRow = async (payload: JsonRecord) => {
     place: payload.place || '',
     photo_url: payload.photoUrl || '',
     supplier_id: payload.supplierId || null,
-    user_id: user.id,
+    user_id: shopUserId,
   };
 };
 
@@ -321,7 +326,7 @@ const supplierFromRow = (row: JsonRecord) => {
 };
 
 const supplierToRow = async (payload: JsonRecord) => {
-  const user = await getCurrentUser();
+  const shopUserId = await getShopScopedUserId();
   return {
     name: payload.name,
     contact: payload.contact || '',
@@ -330,7 +335,7 @@ const supplierToRow = async (payload: JsonRecord) => {
     email: payload.email || '',
     ice: payload.ice || '',
     linked_products: asArray<string>(payload.linkedProducts),
-    user_id: user.id,
+    user_id: shopUserId,
   };
 };
 
@@ -356,7 +361,7 @@ const saleFromRow = (row: JsonRecord) => {
 };
 
 const saleToRow = async (payload: JsonRecord) => {
-  const user = await getCurrentUser();
+  const shopUserId = await getShopScopedUserId();
   return {
     items: asArray<JsonRecord>(payload.items).map((item) => ({
       product_id: item.productId,
@@ -370,7 +375,7 @@ const saleToRow = async (payload: JsonRecord) => {
     total_amount: Number(payload.totalAmount || 0),
     tva_amount: Number(payload.tvaAmount || 0),
     payment_method: payload.paymentMethod || 'cash',
-    user_id: user.id,
+    user_id: shopUserId,
   };
 };
 
@@ -415,14 +420,14 @@ const expenseFromRow = (row: JsonRecord) => {
 };
 
 const expenseToRow = async (payload: JsonRecord) => {
-  const user = await getCurrentUser();
+  const shopUserId = await getShopScopedUserId();
   return {
     title: payload.title,
     amount: Number(payload.amount || 0),
     category: payload.category || 'General',
     expense_date: payload.expenseDate || new Date().toISOString(),
     notes: payload.notes || '',
-    user_id: user.id,
+    user_id: shopUserId,
   };
 };
 
@@ -443,7 +448,7 @@ const customerFromRow = (row: JsonRecord) => {
 };
 
 const customerToRow = async (payload: JsonRecord) => {
-  const user = await getCurrentUser();
+  const shopUserId = await getShopScopedUserId();
   return {
     name: String(payload.name || '').trim(),
     phone: String(payload.phone || '').trim(),
@@ -452,7 +457,7 @@ const customerToRow = async (payload: JsonRecord) => {
     notes: String(payload.notes || '').trim(),
     credit_limit: Number(payload.creditLimit || 0),
     opening_balance: Number(payload.openingBalance || 0),
-    user_id: user.id,
+    user_id: shopUserId,
   };
 };
 
@@ -471,14 +476,14 @@ const creditEntryFromRow = (row: JsonRecord) => {
 };
 
 const creditEntryToRow = async (payload: JsonRecord) => {
-  const user = await getCurrentUser();
+  const shopUserId = await getShopScopedUserId();
   return {
     customer_id: parseId(payload.customerId ?? payload.customer_id),
     amount: Number(payload.amount || 0),
     entry_type: String(payload.entryType || payload.entry_type || 'credit').trim(),
     payment_method: String(payload.paymentMethod || payload.payment_method || 'cash').trim(),
     note: String(payload.note || '').trim(),
-    user_id: user.id,
+    user_id: shopUserId,
   };
 };
 
@@ -502,7 +507,7 @@ const purchaseOrderFromRow = (row: JsonRecord) => {
 };
 
 const purchaseOrderToRow = async (payload: JsonRecord) => {
-  const user = await getCurrentUser();
+  const shopUserId = await getShopScopedUserId();
   return {
     supplier_id: payload.supplierId,
     items: asArray<JsonRecord>(payload.items).map((item) => ({
@@ -514,7 +519,7 @@ const purchaseOrderToRow = async (payload: JsonRecord) => {
     status: payload.status || 'Pending',
     expected_delivery_date: payload.expectedDeliveryDate || payload.expectedDate || null,
     total_amount: Number(payload.totalAmount || 0),
-    user_id: user.id,
+    user_id: shopUserId,
   };
 };
 
@@ -632,6 +637,7 @@ const computeDocumentTotals = (
 
 const documentToRow = async (payload: JsonRecord, existing?: JsonRecord) => {
   const user = await getCurrentUser();
+  const shopUserId = user.companyOwnerId || user.id;
   const documentType = (payload.documentType || existing?.documentType || existing?.document_type) as keyof typeof TYPE_PREFIX;
   const customerAddress = payload.customerAddress || existing?.customerAddress || existing?.customer_address || '';
   const issueDate = payload.issueDate || existing?.issueDate || existing?.issue_date || new Date().toISOString();
@@ -694,7 +700,7 @@ const documentToRow = async (payload: JsonRecord, existing?: JsonRecord) => {
     validated_at: isValidatedDocumentStatus(nextStatus)
       ? existing?.validatedAt || existing?.validated_at || new Date().toISOString()
       : null,
-    user_id: user.id,
+    user_id: shopUserId,
   };
 };
 
@@ -702,8 +708,9 @@ const shouldApplyDocumentEffects = (status: string) => String(status || '').toLo
 
 const loadProductRecord = async (productId: string) => {
   if (!productId) return null;
+  const shopUserId = await getShopScopedUserId();
   const rows = await withTable('products', 'products', (tableName) =>
-    ensureSupabase().from(tableName).select('*').eq('id', productId).limit(1)
+    ensureSupabase().from(tableName).select('*').eq('id', productId).eq('user_id', shopUserId).limit(1)
   );
   return asArray<JsonRecord>(rows)[0] || null;
 };
@@ -756,12 +763,18 @@ const applyBusinessDocumentEffects = async (document: ReturnType<typeof document
 };
 
 const listProducts = async (): Promise<ApiResponse<any[]>> => {
-  const rows = await withTable('products', 'products', (tableName) => ensureSupabase().from(tableName).select('*'));
+  const shopUserId = await getShopScopedUserId();
+  const rows = await withTable('products', 'products', (tableName) =>
+    ensureSupabase().from(tableName).select('*').eq('user_id', shopUserId)
+  );
   return { data: sortByDateDesc(asArray<JsonRecord>(rows).map(productFromRow), ['createdAt']) };
 };
 
 const listCustomers = async (): Promise<ApiResponse<any[]>> => {
-  const rows = await withTable('customers', 'customers', (tableName) => ensureSupabase().from(tableName).select('*'));
+  const shopUserId = await getShopScopedUserId();
+  const rows = await withTable('customers', 'customers', (tableName) =>
+    ensureSupabase().from(tableName).select('*').eq('user_id', shopUserId)
+  );
   return { data: sortByDateDesc(asArray<JsonRecord>(rows).map(customerFromRow), ['createdAt']) };
 };
 
@@ -789,7 +802,10 @@ const deleteCustomer = async (id: string) => {
 };
 
 const listCustomerCredits = async (): Promise<ApiResponse<any[]>> => {
-  const rows = await withTable('customerCredits', 'credits', (tableName) => ensureSupabase().from(tableName).select('*'));
+  const shopUserId = await getShopScopedUserId();
+  const rows = await withTable('customerCredits', 'credits', (tableName) =>
+    ensureSupabase().from(tableName).select('*').eq('user_id', shopUserId)
+  );
   return { data: sortByDateDesc(asArray<JsonRecord>(rows).map(creditEntryFromRow), ['createdAt']) };
 };
 
@@ -836,7 +852,10 @@ const bulkCreateProducts = async (payload: JsonRecord[]) => {
 };
 
 const listSuppliers = async (): Promise<ApiResponse<any[]>> => {
-  const rows = await withTable('suppliers', 'suppliers', (tableName) => ensureSupabase().from(tableName).select('*'));
+  const shopUserId = await getShopScopedUserId();
+  const rows = await withTable('suppliers', 'suppliers', (tableName) =>
+    ensureSupabase().from(tableName).select('*').eq('user_id', shopUserId)
+  );
   return { data: sortByDateDesc(asArray<JsonRecord>(rows).map(supplierFromRow), ['createdAt']) };
 };
 
@@ -860,16 +879,20 @@ const deleteSupplier = async (id: string) => {
 };
 
 const listSales = async (): Promise<ApiResponse<any[]>> => {
-  const rows = await withTable('sales', 'sales', (tableName) => ensureSupabase().from(tableName).select('*'));
+  const shopUserId = await getShopScopedUserId();
+  const rows = await withTable('sales', 'sales', (tableName) =>
+    ensureSupabase().from(tableName).select('*').eq('user_id', shopUserId)
+  );
   return { data: sortByDateDesc(asArray<JsonRecord>(rows).map(saleFromRow), ['createdAt']) };
 };
 
 const createSale = async (payload: JsonRecord) => {
   const row = await saleToRow(payload);
+  const shopUserId = await getShopScopedUserId();
   for (const item of row.items) {
     const productId = parseId(item.product_id);
     const productRows = await withTable('products', 'products', (tableName) =>
-      ensureSupabase().from(tableName).select('*').eq('id', productId).limit(1)
+      ensureSupabase().from(tableName).select('*').eq('id', productId).eq('user_id', shopUserId).limit(1)
     );
     const product = asArray<JsonRecord>(productRows)[0];
     if (!product) throw createApiError(`Produit introuvable: ${productId}`, 404);
@@ -882,13 +905,17 @@ const createSale = async (payload: JsonRecord) => {
 };
 
 const listReturns = async (): Promise<ApiResponse<any[]>> => {
-  const rows = await withTable('returns', 'returns', (tableName) => ensureSupabase().from(tableName).select('*'));
+  const shopUserId = await getShopScopedUserId();
+  const rows = await withTable('returns', 'returns', (tableName) =>
+    ensureSupabase().from(tableName).select('*').eq('user_id', shopUserId)
+  );
   return { data: sortByDateDesc(asArray<JsonRecord>(rows).map(returnFromRow), ['createdAt']) };
 };
 
 const getReturnedQuantitiesForSale = async (saleId: string) => {
+  const shopUserId = await getShopScopedUserId();
   const rows = await withTable('returns', 'returns', (tableName) =>
-    ensureSupabase().from(tableName).select('*').eq('sale_id', saleId)
+    ensureSupabase().from(tableName).select('*').eq('sale_id', saleId).eq('user_id', shopUserId)
   );
 
   const returnedByProduct = new Map<string, number>();
@@ -968,6 +995,7 @@ const createReturn = async (payload: JsonRecord) => {
   const totalAmount = subtotalAmount + tvaAmount;
   const restocked = payload.restocked !== false;
   const currentUser = await getCurrentUser();
+  const shopUserId = currentUser.companyOwnerId || currentUser.id;
 
   if (restocked) {
     for (const item of normalizedItems) {
@@ -997,7 +1025,7 @@ const createReturn = async (payload: JsonRecord) => {
     reason: String(payload.reason || '').trim(),
     notes: String(payload.notes || '').trim(),
     restocked,
-    user_id: currentUser.id,
+    user_id: shopUserId,
   };
 
   const data = await withTable('returns', 'returns', (tableName) =>
@@ -1007,7 +1035,10 @@ const createReturn = async (payload: JsonRecord) => {
 };
 
 const listExpenses = async (): Promise<ApiResponse<any[]>> => {
-  const rows = await withTable('expenses', 'expenses', (tableName) => ensureSupabase().from(tableName).select('*'));
+  const shopUserId = await getShopScopedUserId();
+  const rows = await withTable('expenses', 'expenses', (tableName) =>
+    ensureSupabase().from(tableName).select('*').eq('user_id', shopUserId)
+  );
   return { data: sortByDateDesc(asArray<JsonRecord>(rows).map(expenseFromRow), ['expenseDate', 'createdAt']) };
 };
 
@@ -1031,7 +1062,10 @@ const deleteExpense = async (id: string) => {
 };
 
 const listPurchaseOrders = async (): Promise<ApiResponse<any[]>> => {
-  const rows = await withTable('purchaseOrders', 'purchase-orders', (tableName) => ensureSupabase().from(tableName).select('*'));
+  const shopUserId = await getShopScopedUserId();
+  const rows = await withTable('purchaseOrders', 'purchase-orders', (tableName) =>
+    ensureSupabase().from(tableName).select('*').eq('user_id', shopUserId)
+  );
   return { data: sortByDateDesc(asArray<JsonRecord>(rows).map(purchaseOrderFromRow), ['createdAt']) };
 };
 
@@ -1074,12 +1108,15 @@ const deletePurchaseOrder = async (id: string) => {
 };
 
 const listBusinessDocuments = async (config?: ApiConfig): Promise<ApiResponse<any[]>> => {
+  const shopUserId = await getShopScopedUserId();
   let queryTableName = resolvedTableNames.get('businessDocuments');
   if (!queryTableName) {
-    const rows = await withTable('businessDocuments', 'documents', (tableName) => ensureSupabase().from(tableName).select('*'));
+    const rows = await withTable('businessDocuments', 'documents', (tableName) =>
+      ensureSupabase().from(tableName).select('*').eq('user_id', shopUserId)
+    );
     return { data: sortByDateDesc(asArray<JsonRecord>(rows).map(documentFromRow), ['issueDate', 'createdAt']) };
   }
-  let query = ensureSupabase().from(queryTableName).select('*');
+  let query = ensureSupabase().from(queryTableName).select('*').eq('user_id', shopUserId);
   if (config?.params?.type) query = query.eq('document_type', config.params.type);
   const rows = await runQuery(query);
   return { data: sortByDateDesc(asArray<JsonRecord>(rows).map(documentFromRow), ['issueDate', 'createdAt']) };
@@ -1138,6 +1175,7 @@ const convertBusinessDocument = async (id: string) => {
     throw createApiError('Only quote and delivery note can be converted to invoice');
   }
   const user = await getCurrentUser();
+  const shopUserId = user.companyOwnerId || user.id;
   const invoiceNumber = await generateNextDocumentNumber('invoice', new Date().toISOString());
   const data = await withTable('businessDocuments', 'documents', (tableName) =>
     ensureSupabase()
@@ -1167,7 +1205,7 @@ const convertBusinessDocument = async (id: string) => {
         updated_by: user.id,
         validated_by: null,
         validated_at: null,
-        user_id: user.id,
+        user_id: shopUserId,
       })
       .select('*')
       .single()
@@ -1187,6 +1225,7 @@ const convertInvoiceToCreditNote = async (id: string) => {
   }
 
   const user = await getCurrentUser();
+  const shopUserId = user.companyOwnerId || user.id;
   const creditNoteNumber = await generateNextDocumentNumber('credit_note', new Date().toISOString());
   const sourceLabel = source.documentNumber || source._id;
   const data = await withTable('businessDocuments', 'documents', (tableName) =>
@@ -1220,7 +1259,7 @@ const convertInvoiceToCreditNote = async (id: string) => {
         updated_by: user.id,
         validated_by: null,
         validated_at: null,
-        user_id: user.id,
+        user_id: shopUserId,
       })
       .select('*')
       .single()
