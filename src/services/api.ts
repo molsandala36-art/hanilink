@@ -9,6 +9,7 @@ import {
   initializeOfflineSync,
   queueOfflineMutation,
 } from './offlineSync';
+import { getStoredSupabaseSession } from './supabase';
 
 const getAxiosApi = () =>
   axios.create({
@@ -100,6 +101,29 @@ const isNetworkError = (error: any) =>
   String(error?.message || '').toLowerCase().includes('network') ||
   String(error?.message || '').toLowerCase().includes('fetch');
 
+const withActorMeta = async (config?: any) => {
+  if (!isSupabaseConfigured()) return config;
+
+  const existingActor = String(config?.meta?.actorUserId || '').trim();
+  if (existingActor) {
+    return config;
+  }
+
+  const session = await getStoredSupabaseSession().catch(() => null);
+  const actorUserId = String(session?.user?.id || '').trim();
+  if (!actorUserId) {
+    return config;
+  }
+
+  return {
+    ...(config || {}),
+    meta: {
+      ...(config?.meta || {}),
+      actorUserId,
+    },
+  };
+};
+
 const request = async (method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, payload?: any, config?: any) => {
   try {
     if (isSupabaseConfigured()) {
@@ -124,11 +148,15 @@ const request = async (method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, 
         typeof navigator !== 'undefined' &&
         !navigator.onLine
       ) {
-        return queueOfflineMutation(method, path, payload, config);
+        return queueOfflineMutation(method, path, payload, await withActorMeta(config));
       }
 
       try {
-        const response = await handleSupabaseApiRequest(method, path, payload, config);
+        const mutationConfig =
+          method === 'POST' || method === 'PUT' || method === 'DELETE'
+            ? await withActorMeta(config)
+            : config;
+        const response = await handleSupabaseApiRequest(method, path, payload, mutationConfig);
         if (method === 'POST' || method === 'PUT' || method === 'DELETE') {
           if (isOfflineCapableMutation(method, path)) {
             cacheOnlineMutation(method, path, response.data, payload);
@@ -138,7 +166,7 @@ const request = async (method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, 
         return response;
       } catch (error: any) {
         if ((method === 'POST' || method === 'PUT' || method === 'DELETE') && isOfflineCapableMutation(method, path) && isNetworkError(error)) {
-          return queueOfflineMutation(method, path, payload, config);
+          return queueOfflineMutation(method, path, payload, await withActorMeta(config));
         }
         throw error;
       }

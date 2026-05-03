@@ -4,6 +4,9 @@ type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
 interface ApiConfig {
   params?: Record<string, any>;
+  meta?: {
+    actorUserId?: string;
+  };
 }
 
 interface ApiResponse<T = any> {

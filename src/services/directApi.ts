@@ -7,6 +7,9 @@ type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
 interface ApiConfig {
   params?: Record<string, any>;
+  meta?: {
+    actorUserId?: string;
+  };
 }
 
 interface ApiResponse<T = any> {
@@ -355,13 +358,16 @@ const saleFromRow = (row: JsonRecord) => {
     totalAmount: Number(normalized.totalAmount ?? normalized.total_amount ?? 0),
     tvaAmount: Number(normalized.tvaAmount ?? normalized.tva_amount ?? 0),
     paymentMethod: normalized.paymentMethod ?? normalized.payment_method ?? 'cash',
+    createdBy: parseId(normalized.createdBy ?? normalized.created_by),
     userId: parseId(normalized.userId ?? normalized.user_id),
     createdAt: normalized.createdAt,
   };
 };
 
-const saleToRow = async (payload: JsonRecord) => {
+const saleToRow = async (payload: JsonRecord, config?: ApiConfig) => {
+  const user = await getCurrentUser();
   const shopUserId = await getShopScopedUserId();
+  const actorUserId = String(config?.meta?.actorUserId || user.id || '').trim() || user.id;
   return {
     items: asArray<JsonRecord>(payload.items).map((item) => ({
       product_id: item.productId,
@@ -375,6 +381,7 @@ const saleToRow = async (payload: JsonRecord) => {
     total_amount: Number(payload.totalAmount || 0),
     tva_amount: Number(payload.tvaAmount || 0),
     payment_method: payload.paymentMethod || 'cash',
+    created_by: actorUserId,
     user_id: shopUserId,
   };
 };
@@ -886,8 +893,8 @@ const listSales = async (): Promise<ApiResponse<any[]>> => {
   return { data: sortByDateDesc(asArray<JsonRecord>(rows).map(saleFromRow), ['createdAt']) };
 };
 
-const createSale = async (payload: JsonRecord) => {
-  const row = await saleToRow(payload);
+const createSale = async (payload: JsonRecord, config?: ApiConfig) => {
+  const row = await saleToRow(payload, config);
   const shopUserId = await getShopScopedUserId();
   for (const item of row.items) {
     const productId = parseId(item.product_id);
@@ -1370,9 +1377,74 @@ const listUsers = async () => {
       if: row.if_value || '',
       rc: row.rc || '',
       address: row.address || '',
+      permissions: row.permissions && typeof row.permissions === 'object' ? row.permissions : {},
       role: row.role || 'employee',
       createdAt: row.created_at || new Date().toISOString(),
     })),
+  };
+};
+
+const listEmployeeSales = async (employeeId: string, config?: ApiConfig) => {
+  const currentUser = await getCurrentUser();
+  const companyOwnerId = currentUser.companyOwnerId || currentUser.id;
+
+  const employeeRows = await withTable('appUsers', 'users', (tableName) =>
+    ensureSupabase()
+      .from(tableName)
+      .select('*')
+      .eq('id', employeeId)
+      .eq('company_owner_id', companyOwnerId)
+      .limit(1)
+  );
+  const employee = asArray<JsonRecord>(employeeRows)[0];
+  if (!employee) {
+    throw createApiError("Employe introuvable pour cette boutique.", 404);
+  }
+
+  const from = String(config?.params?.from || '').trim();
+  const to = String(config?.params?.to || '').trim();
+  const allSales = (await listSales()).data;
+  const fromDate = from ? new Date(from).getTime() : 0;
+  const toDate = to
+    ? (() => {
+        const date = new Date(to);
+        date.setHours(23, 59, 59, 999);
+        return date.getTime();
+      })()
+    : Number.POSITIVE_INFINITY;
+
+  const sales = sortByDateDesc(
+    allSales.filter((sale) => {
+      const saleOwnerId = parseId(sale.userId);
+      const saleCreatorId = parseId(sale.createdBy);
+      const createdAt = new Date(sale.createdAt || '').getTime();
+      const belongsToEmployee =
+        saleCreatorId === employeeId ||
+        (saleCreatorId ? false : saleOwnerId === employeeId);
+      const inDateRange = createdAt >= fromDate && createdAt <= toDate;
+
+      return belongsToEmployee && inDateRange && (saleOwnerId === companyOwnerId || saleOwnerId === employeeId);
+    }),
+    ['createdAt']
+  );
+  const summary = {
+    totalSales: sales.length,
+    totalAmount: sales.reduce((sum, sale) => sum + Number(sale.totalAmount || 0), 0),
+    totalTva: sales.reduce((sum, sale) => sum + Number(sale.tvaAmount || 0), 0),
+  };
+
+  return {
+    data: {
+      employee: {
+        _id: parseId(employee.id),
+        id: parseId(employee.id),
+        name: employee.name || '',
+        email: employee.email || '',
+        role: employee.role || 'employee',
+      },
+      summary,
+      sales,
+    },
   };
 };
 
@@ -1396,6 +1468,7 @@ const updateUser = async (id: string, payload: JsonRecord) => {
     if_value: payload.if || '',
     rc: payload.rc || '',
     address: payload.address || '',
+    permissions: payload.permissions && typeof payload.permissions === 'object' ? payload.permissions : {},
   };
 
   const data = await withTable('appUsers', 'users', (tableName) =>
@@ -1413,6 +1486,10 @@ const updateUser = async (id: string, payload: JsonRecord) => {
       if: (data as JsonRecord).if_value || '',
       rc: (data as JsonRecord).rc || '',
       address: (data as JsonRecord).address || '',
+      permissions:
+        (data as JsonRecord).permissions && typeof (data as JsonRecord).permissions === 'object'
+          ? (data as JsonRecord).permissions
+          : {},
       role: (data as JsonRecord).role || 'employee',
       createdAt: (data as JsonRecord).created_at || new Date().toISOString(),
     },
@@ -1506,7 +1583,7 @@ export const handleSupabaseApiRequest = async (
   if (method === 'DELETE' && cleanPath.startsWith('/suppliers/')) return deleteSupplier(cleanPath.split('/')[2]);
 
   if (method === 'GET' && cleanPath === '/sales') return listSales();
-  if (method === 'POST' && cleanPath === '/sales') return createSale(payload);
+  if (method === 'POST' && cleanPath === '/sales') return createSale(payload, config);
   if (method === 'GET' && cleanPath === '/returns') return listReturns();
   if (method === 'POST' && cleanPath === '/returns') return createReturn(payload);
 
@@ -1530,6 +1607,9 @@ export const handleSupabaseApiRequest = async (
   if (method === 'GET' && cleanPath === '/analytics') return getAnalytics();
 
   if (method === 'GET' && cleanPath === '/users') return listUsers();
+  if (method === 'GET' && /\/users\/[^/]+\/sales$/.test(cleanPath)) {
+    return listEmployeeSales(cleanPath.split('/')[2], config);
+  }
   if (method === 'PUT' && /\/users\/[^/]+\/role$/.test(cleanPath)) {
     return updateUserRole(cleanPath.split('/')[2], payload);
   }
