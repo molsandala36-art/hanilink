@@ -6,7 +6,7 @@ import { formatCurrency, formatDate, getDefaultVatRate } from '../lib/utils';
 import { translations, Language } from '../lib/translations';
 import { buildPrintableDocumentHtml, getStoredDocumentSettings } from '../lib/documentSettings';
 
-type DocumentType = 'quote' | 'delivery_note' | 'invoice' | 'purchase_note' | 'transfer_note';
+type DocumentType = 'quote' | 'delivery_note' | 'invoice' | 'credit_note' | 'purchase_note' | 'transfer_note';
 type DocumentStatus = 'draft' | 'sent' | 'validated';
 
 interface BusinessDocumentItem {
@@ -33,6 +33,9 @@ interface BusinessDocument {
   customerName: string;
   customerPhone?: string;
   customerAddress?: string;
+  customerIce?: string;
+  customerIf?: string;
+  customerRc?: string;
   issueDate: string;
   dueDate?: string;
   status: DocumentStatus;
@@ -40,13 +43,23 @@ interface BusinessDocument {
   subtotal: number;
   taxAmount: number;
   totalAmount: number;
+  paymentMethod?: string;
+  paymentReference?: string;
+  restockOnValidate?: boolean;
   notes?: string;
+  createdBy?: string;
+  updatedBy?: string;
+  validatedBy?: string;
+  validatedAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 const TYPE_KEYS: Record<DocumentType, string> = {
   quote: 'quote',
   delivery_note: 'delivery_note',
   invoice: 'invoice',
+  credit_note: 'credit_note',
   purchase_note: 'purchase_note',
   transfer_note: 'transfer_note'
 };
@@ -61,13 +74,27 @@ const createEmptyForm = () => ({
   customerName: '',
   customerPhone: '',
   customerAddress: '',
+  customerIce: '',
+  customerIf: '',
+  customerRc: '',
   issueDate: new Date().toISOString().slice(0, 10),
   dueDate: '',
   status: 'draft' as DocumentStatus,
   taxRate: getDefaultVatRate(),
+  paymentMethod: 'cash',
+  paymentReference: '',
+  restockOnValidate: true,
   notes: '',
   items: [{ productId: '', description: '', quantity: '1', unitPrice: '0', sourcePlace: '', destinationPlace: '' }]
 });
+
+const csvEscape = (value: unknown) => {
+  const normalized = String(value ?? '');
+  return `"${normalized.replace(/"/g, '""')}"`;
+};
+
+const SALES_DOCUMENT_TYPES: DocumentType[] = ['invoice', 'credit_note', 'delivery_note', 'quote'];
+const PURCHASE_DOCUMENT_TYPES: DocumentType[] = ['purchase_note'];
 
 const BusinessDocuments = () => {
   const [documents, setDocuments] = useState<BusinessDocument[]>([]);
@@ -83,8 +110,20 @@ const BusinessDocuments = () => {
   const t = translations[language];
   const isTransferNote = activeType === 'transfer_note';
   const isPurchaseNote = activeType === 'purchase_note';
+  const isInvoice = activeType === 'invoice';
+  const isCreditNote = activeType === 'credit_note';
   const currentUser = useMemo(() => JSON.parse(localStorage.getItem('user') || '{}'), []);
   const receiptSettings = useMemo(() => getStoredDocumentSettings(), []);
+  const isValidatedDocument = (doc?: BusinessDocument | null) => doc?.status === 'validated';
+  const formatAuditActor = (value?: string | null) => {
+    if (!value) return '-';
+    const currentUserId = currentUser.id || currentUser._id;
+    return value === currentUserId
+      ? language === 'ar'
+        ? 'أنا'
+        : 'Moi'
+      : value;
+  };
 
   const fetchDocuments = async (type = activeType) => {
     try {
@@ -128,6 +167,14 @@ const BusinessDocuments = () => {
     () => filteredDocuments.reduce((acc, doc) => acc + doc.totalAmount, 0),
     [filteredDocuments]
   );
+  const salesDocuments = useMemo(
+    () => filteredDocuments.filter((doc) => SALES_DOCUMENT_TYPES.includes(doc.documentType)),
+    [filteredDocuments]
+  );
+  const purchaseDocuments = useMemo(
+    () => filteredDocuments.filter((doc) => PURCHASE_DOCUMENT_TYPES.includes(doc.documentType)),
+    [filteredDocuments]
+  );
 
   const formTotals = useMemo(() => {
     const subtotal = formData.items.reduce((acc, item) => {
@@ -153,10 +200,16 @@ const BusinessDocuments = () => {
       customerName: doc.customerName || '',
       customerPhone: doc.customerPhone || '',
       customerAddress: doc.customerAddress || '',
+      customerIce: doc.customerIce || '',
+      customerIf: doc.customerIf || '',
+      customerRc: doc.customerRc || '',
       issueDate: new Date(doc.issueDate).toISOString().slice(0, 10),
       dueDate: doc.dueDate ? new Date(doc.dueDate).toISOString().slice(0, 10) : '',
       status: doc.status || 'draft',
       taxRate,
+      paymentMethod: doc.paymentMethod || 'cash',
+      paymentReference: doc.paymentReference || '',
+      restockOnValidate: doc.restockOnValidate !== false,
       notes: doc.notes || '',
       items: doc.items.length
         ? doc.items.map((item) => ({
@@ -212,15 +265,30 @@ const BusinessDocuments = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (editingDocument && isValidatedDocument(editingDocument)) {
+      alert(
+        language === 'ar'
+          ? 'لا يمكن تعديل وثيقة معتمدة. أنشئ وثيقة تصحيح أو ارجاع بدل ذلك.'
+          : 'Un document valide ne peut plus etre modifie. Cree un document correctif ou un retour a la place.'
+      );
+      return;
+    }
+
     const payload = {
       documentType: activeType,
       customerName: formData.customerName.trim(),
       customerPhone: formData.customerPhone.trim(),
       customerAddress: formData.customerAddress.trim(),
+      customerIce: formData.customerIce.trim(),
+      customerIf: formData.customerIf.trim(),
+      customerRc: formData.customerRc.trim(),
       issueDate: formData.issueDate,
       dueDate: formData.dueDate || null,
       status: formData.status,
       taxRate: Number(formData.taxRate || 0),
+      paymentMethod: formData.paymentMethod,
+      paymentReference: formData.paymentReference.trim(),
+      restockOnValidate: Boolean(formData.restockOnValidate),
       notes: formData.notes.trim(),
       items: formData.items
         .map((item) => ({
@@ -235,6 +303,14 @@ const BusinessDocuments = () => {
     };
 
     if (!payload.customerName || payload.items.length === 0) return;
+    if (activeType === 'invoice' && !payload.paymentMethod) {
+      alert(
+        language === 'ar'
+          ? 'طريقة الدفع إلزامية في الفاتورة.'
+          : 'Le mode de paiement est obligatoire sur une facture.'
+      );
+      return;
+    }
 
     try {
       if (editingDocument) {
@@ -250,6 +326,15 @@ const BusinessDocuments = () => {
   };
 
   const handleDelete = async (id: string) => {
+    const targetDocument = documents.find((doc) => doc._id === id);
+    if (isValidatedDocument(targetDocument)) {
+      alert(
+        language === 'ar'
+          ? 'لا يمكن حذف وثيقة معتمدة. استعمل وثيقة ارجاع أو تصحيح.'
+          : 'Un document valide ne peut pas etre supprime. Utilise un retour ou un document correctif.'
+      );
+      return;
+    }
     if (!window.confirm(t.confirm_delete_product)) return;
     try {
       await api.delete(`/documents/${id}`);
@@ -270,6 +355,167 @@ const BusinessDocuments = () => {
     }
   };
 
+  const convertToCreditNote = async (id: string) => {
+    try {
+      await api.post(`/documents/${id}/convert-to-credit-note`);
+      setActiveType('credit_note');
+      fetchDocuments('credit_note');
+    } catch (err) {
+      console.error(err);
+      alert(language === 'ar' ? 'فشل إنشاء إشعار دائن' : "Echec de la generation de l'avoir");
+    }
+  };
+
+  const exportVatRegister = (documentsToExport: BusinessDocument[], scope: 'sales' | 'purchases') => {
+    if (documentsToExport.length === 0) {
+      alert(language === 'ar' ? 'لا توجد وثائق للتصدير.' : 'Aucun document a exporter.');
+      return;
+    }
+
+    const headers = [
+      'document_type',
+      'document_number',
+      'issue_date',
+      'due_date',
+      'status',
+      'customer_name',
+      'customer_ice',
+      'customer_if',
+      'customer_rc',
+      'payment_method',
+      'payment_reference',
+      'subtotal_ht',
+      'tax_amount',
+      'total_ttc',
+      'items_count',
+      'created_by',
+      'created_at',
+      'updated_by',
+      'updated_at',
+      'validated_by',
+      'validated_at',
+    ];
+
+    const rows = documentsToExport.map((doc) => [
+      doc.documentType,
+      doc.documentNumber,
+      doc.issueDate,
+      doc.dueDate || '',
+      doc.status,
+      doc.customerName,
+      doc.customerIce || '',
+      doc.customerIf || '',
+      doc.customerRc || '',
+      doc.paymentMethod || '',
+      doc.paymentReference || '',
+      Number(doc.subtotal || 0).toFixed(2),
+      Number(doc.taxAmount || 0).toFixed(2),
+      Number(doc.totalAmount || 0).toFixed(2),
+      doc.items.length,
+      doc.createdBy || '',
+      doc.createdAt || '',
+      doc.updatedBy || '',
+      doc.updatedAt || '',
+      doc.validatedBy || '',
+      doc.validatedAt || '',
+    ]);
+
+    const csvContent = [headers, ...rows]
+      .map((row) => row.map(csvEscape).join(','))
+      .join('\n');
+
+    const blob = new Blob([`\uFEFF${csvContent}`], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `hani-tva-${scope}-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const exportVatLines = (documentsToExport: BusinessDocument[], scope: 'sales' | 'purchases') => {
+    if (documentsToExport.length === 0) {
+      alert(language === 'ar' ? 'لا توجد وثائق للتصدير.' : 'Aucun document a exporter.');
+      return;
+    }
+
+    const headers = [
+      'document_type',
+      'document_number',
+      'issue_date',
+      'status',
+      'customer_name',
+      'customer_ice',
+      'customer_if',
+      'customer_rc',
+      'payment_method',
+      'payment_reference',
+      'line_description',
+      'line_quantity',
+      'line_unit_price_ht',
+      'line_total_ht',
+      'line_tax_amount',
+      'line_total_ttc',
+      'document_subtotal_ht',
+      'document_tax_amount',
+      'document_total_ttc',
+      'created_by',
+      'updated_by',
+      'validated_by',
+      'validated_at',
+    ];
+
+    const rows = documentsToExport.flatMap((doc) => {
+      const taxRate = doc.subtotal > 0 ? Number(doc.taxAmount || 0) / Number(doc.subtotal || 1) : 0;
+      return doc.items.map((item) => {
+        const lineTotalHt = Number(item.lineTotal || 0);
+        const lineTaxAmount = lineTotalHt * taxRate;
+        const lineTotalTtc = lineTotalHt + lineTaxAmount;
+        return [
+          doc.documentType,
+          doc.documentNumber,
+          doc.issueDate,
+          doc.status,
+          doc.customerName,
+          doc.customerIce || '',
+          doc.customerIf || '',
+          doc.customerRc || '',
+          doc.paymentMethod || '',
+          doc.paymentReference || '',
+          item.description,
+          Number(item.quantity || 0),
+          Number(item.unitPrice || 0).toFixed(2),
+          lineTotalHt.toFixed(2),
+          lineTaxAmount.toFixed(2),
+          lineTotalTtc.toFixed(2),
+          Number(doc.subtotal || 0).toFixed(2),
+          Number(doc.taxAmount || 0).toFixed(2),
+          Number(doc.totalAmount || 0).toFixed(2),
+          doc.createdBy || '',
+          doc.updatedBy || '',
+          doc.validatedBy || '',
+          doc.validatedAt || '',
+        ];
+      });
+    });
+
+    const csvContent = [headers, ...rows]
+      .map((row) => row.map(csvEscape).join(','))
+      .join('\n');
+
+    const blob = new Blob([`\uFEFF${csvContent}`], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `hani-tva-lines-${scope}-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   const printDocument = (doc: BusinessDocument) => {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
     const printWindow = window.open('', '_blank');
@@ -277,6 +523,7 @@ const BusinessDocuments = () => {
 
     const documentTitle = t[TYPE_KEYS[doc.documentType]];
     const taxRate = doc.subtotal > 0 ? ((doc.taxAmount / doc.subtotal) * 100).toFixed(2) : getDefaultVatRate();
+    const paymentMethodLabel = doc.paymentMethod ? (t[doc.paymentMethod as keyof typeof t] as string | undefined) || doc.paymentMethod : undefined;
     const html = buildPrintableDocumentHtml(receiptSettings, user, {
       title: documentTitle,
       documentNumber: doc.documentNumber,
@@ -284,11 +531,16 @@ const BusinessDocuments = () => {
       customerName: doc.customerName,
       customerPhone: doc.customerPhone,
       customerAddress: doc.customerAddress,
+      customerIce: doc.customerIce,
+      customerIf: doc.customerIf,
+      customerRc: doc.customerRc,
       notes: doc.notes,
       subtotal: doc.subtotal,
       taxAmount: doc.taxAmount,
       totalAmount: doc.totalAmount,
       taxRateLabel: `${taxRate}%`,
+      paymentMethodLabel,
+      paymentReference: doc.paymentReference,
       items: doc.items.map((item) => ({
         description: item.description,
         quantity: item.quantity,
@@ -315,21 +567,51 @@ const BusinessDocuments = () => {
           </h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">
             {language === 'ar'
-              ? 'إدارة عروض الأسعار وبونات التسليم والفواتير وبونات الشراء والتحويل.'
-              : "Gestion des devis, bons de livraison, factures, bons d'achat et bons de transfert."}
+              ? 'إدارة عروض الأسعار وبونات التسليم والفواتير وإشعارات الدائن وبونات الشراء والتحويل.'
+              : "Gestion des devis, bons de livraison, factures, avoirs, bons d'achat et bons de transfert."}
           </p>
         </div>
-        <button
-          onClick={openCreateModal}
-          className="px-6 py-3 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl transition-all shadow-lg shadow-orange-200 dark:shadow-none flex items-center gap-2"
-        >
-          <Plus className="w-5 h-5" />
-          {t.add_document}
-        </button>
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={() => exportVatLines(salesDocuments, 'sales')}
+            className="px-5 py-3 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-700 font-bold rounded-xl transition-all shadow-sm flex items-center gap-2"
+          >
+            <FileText className="w-5 h-5" />
+            {t.export_vat_sales_lines}
+          </button>
+          <button
+            onClick={() => exportVatRegister(salesDocuments, 'sales')}
+            className="px-5 py-3 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-700 font-bold rounded-xl transition-all shadow-sm flex items-center gap-2"
+          >
+            <FileUp className="w-5 h-5" />
+            {t.export_vat_sales}
+          </button>
+          <button
+            onClick={() => exportVatLines(purchaseDocuments, 'purchases')}
+            className="px-5 py-3 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-700 font-bold rounded-xl transition-all shadow-sm flex items-center gap-2"
+          >
+            <FileText className="w-5 h-5" />
+            {t.export_vat_purchases_lines}
+          </button>
+          <button
+            onClick={() => exportVatRegister(purchaseDocuments, 'purchases')}
+            className="px-5 py-3 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-700 font-bold rounded-xl transition-all shadow-sm flex items-center gap-2"
+          >
+            <FileUp className="w-5 h-5" />
+            {t.export_vat_purchases}
+          </button>
+          <button
+            onClick={openCreateModal}
+            className="px-6 py-3 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl transition-all shadow-lg shadow-orange-200 dark:shadow-none flex items-center gap-2"
+          >
+            <Plus className="w-5 h-5" />
+            {t.add_document}
+          </button>
+        </div>
       </div>
 
       <div className="flex gap-2 mb-4 overflow-x-auto">
-        {(['quote', 'delivery_note', 'invoice', 'purchase_note', 'transfer_note'] as DocumentType[]).map((type) => (
+        {(['quote', 'delivery_note', 'invoice', 'credit_note', 'purchase_note', 'transfer_note'] as DocumentType[]).map((type) => (
           <button
             key={type}
             onClick={() => setActiveType(type)}
@@ -396,6 +678,16 @@ const BusinessDocuments = () => {
                       <span className="px-2 py-1 rounded-full text-xs font-bold bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300">
                         {t[STATUS_KEYS[doc.status]]}
                       </span>
+                      {doc.validatedAt && (
+                        <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                          {language === 'ar' ? 'اعتمد في' : 'Valide le'} {formatDate(doc.validatedAt)}
+                        </div>
+                      )}
+                      {doc.updatedAt && doc.updatedAt !== doc.createdAt && (
+                        <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                          {language === 'ar' ? 'آخر تحديث' : 'Maj'} {formatDate(doc.updatedAt)}
+                        </div>
+                      )}
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
@@ -408,6 +700,15 @@ const BusinessDocuments = () => {
                             <FileUp className="w-4 h-4" />
                           </button>
                         )}
+                        {doc.documentType === 'invoice' && (
+                          <button
+                            onClick={() => convertToCreditNote(doc._id)}
+                            className="p-2 text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-900/20 rounded-xl transition-colors"
+                            title={t.convert_to_credit_note}
+                          >
+                            <FileUp className="w-4 h-4" />
+                          </button>
+                        )}
                         <button
                           onClick={() => printDocument(doc)}
                           className="p-2 text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-xl transition-colors"
@@ -416,13 +717,17 @@ const BusinessDocuments = () => {
                         </button>
                         <button
                           onClick={() => openEditModal(doc)}
+                          disabled={isValidatedDocument(doc)}
                           className="p-2 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl transition-colors"
+                          title={isValidatedDocument(doc) ? (language === 'ar' ? 'وثيقة معتمدة غير قابلة للتعديل' : 'Document valide non modifiable') : undefined}
                         >
                           <Edit2 className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => handleDelete(doc._id)}
+                          disabled={isValidatedDocument(doc)}
                           className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors"
+                          title={isValidatedDocument(doc) ? (language === 'ar' ? 'وثيقة معتمدة غير قابلة للحذف' : 'Document valide non supprimable') : undefined}
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -487,6 +792,50 @@ const BusinessDocuments = () => {
                 </div>
               </div>
 
+              {editingDocument && (
+                <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/60 p-4">
+                  <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-3">
+                    {language === 'ar' ? 'سجل التتبع' : "Journal d'audit"}
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-gray-600 dark:text-gray-300">
+                    <div>
+                      <strong>{language === 'ar' ? 'أنشئ بواسطة:' : 'Cree par :'}</strong> {formatAuditActor(editingDocument.createdBy)}
+                    </div>
+                    <div>
+                      <strong>{language === 'ar' ? 'تاريخ الإنشاء:' : 'Date de creation :'}</strong>{' '}
+                      {editingDocument.createdAt ? formatDate(editingDocument.createdAt) : '-'}
+                    </div>
+                    <div>
+                      <strong>{language === 'ar' ? 'آخر تحديث بواسطة:' : 'Maj par :'}</strong> {formatAuditActor(editingDocument.updatedBy)}
+                    </div>
+                    <div>
+                      <strong>{language === 'ar' ? 'تاريخ آخر تحديث:' : 'Date de maj :'}</strong>{' '}
+                      {editingDocument.updatedAt ? formatDate(editingDocument.updatedAt) : '-'}
+                    </div>
+                    <div>
+                      <strong>{language === 'ar' ? 'اعتمد بواسطة:' : 'Valide par :'}</strong> {formatAuditActor(editingDocument.validatedBy)}
+                    </div>
+                    <div>
+                      <strong>{language === 'ar' ? 'تاريخ الاعتماد:' : 'Date de validation :'}</strong>{' '}
+                      {editingDocument.validatedAt ? formatDate(editingDocument.validatedAt) : '-'}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {isValidatedDocument(editingDocument) && (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-200">
+                  {language === 'ar'
+                    ? 'هذه الوثيقة معتمدة. يمكنك طباعتها فقط، أما التعديل أو الحذف فيجب أن يتم عبر وثيقة تصحيح أو ارجاع.'
+                    : 'Ce document est valide. Tu peux encore l’imprimer, mais toute correction doit passer par un document correctif ou un retour.'}
+                  {editingDocument?.validatedAt && (
+                    <div className="mt-2 font-medium">
+                      {language === 'ar' ? 'تاريخ الاعتماد:' : 'Date de validation :'} {formatDate(editingDocument.validatedAt)}
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -514,6 +863,45 @@ const BusinessDocuments = () => {
                     type="text"
                     value={formData.customerPhone}
                     onChange={(e) => setFormData({ ...formData, customerPhone: e.target.value })}
+                    className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none dark:text-white"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    {t.ice}
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.customerIce}
+                    onChange={(e) => setFormData({ ...formData, customerIce: e.target.value })}
+                    placeholder={language === 'ar' ? 'ICE العميل' : 'ICE du client'}
+                    className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    {t.if}
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.customerIf}
+                    onChange={(e) => setFormData({ ...formData, customerIf: e.target.value })}
+                    placeholder={language === 'ar' ? 'IF العميل' : 'IF du client'}
+                    className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    {t.rc}
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.customerRc}
+                    onChange={(e) => setFormData({ ...formData, customerRc: e.target.value })}
+                    placeholder={language === 'ar' ? 'RC العميل' : 'RC du client'}
                     className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none dark:text-white"
                   />
                 </div>
@@ -563,6 +951,49 @@ const BusinessDocuments = () => {
                   </select>
                 </div>
               </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t.payment_method}</label>
+                  <select
+                    value={formData.paymentMethod}
+                    onChange={(e) => setFormData({ ...formData, paymentMethod: e.target.value })}
+                    className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none dark:text-white"
+                  >
+                    <option value="cash">{t.cash}</option>
+                    <option value="card">{t.card}</option>
+                    <option value="cmi">{t.cmi}</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    {language === 'ar' ? 'مرجع الدفع' : 'Reference de paiement'}
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.paymentReference}
+                    onChange={(e) => setFormData({ ...formData, paymentReference: e.target.value })}
+                    placeholder={language === 'ar' ? 'Cheque, virement, transaction...' : 'Cheque, virement, transaction...'}
+                    className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none dark:text-white"
+                  />
+                </div>
+              </div>
+
+              {isCreditNote && (
+                <label className="flex items-center gap-3 rounded-2xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60 px-4 py-3 text-sm text-gray-700 dark:text-gray-200">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(formData.restockOnValidate)}
+                    onChange={(e) => setFormData({ ...formData, restockOnValidate: e.target.checked })}
+                    className="h-4 w-4 rounded border-gray-300 text-orange-500 focus:ring-orange-500"
+                  />
+                  <span>
+                    {language === 'ar'
+                      ? 'إرجاع الكمية إلى المخزون عند اعتماد هذا الإشعار الدائن'
+                      : "Remettre les quantites en stock lors de la validation de cet avoir"}
+                  </span>
+                </label>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -697,6 +1128,7 @@ const BusinessDocuments = () => {
                 </button>
                 <button
                   type="submit"
+                  disabled={isValidatedDocument(editingDocument)}
                   className="flex-1 px-6 py-3 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl transition-all shadow-lg shadow-orange-200 dark:shadow-none"
                 >
                   {editingDocument ? t.edit_document : t.add_document}

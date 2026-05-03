@@ -31,6 +31,7 @@ const TYPE_PREFIX = {
   quote: 'DEV',
   delivery_note: 'BL',
   invoice: 'FAC',
+  credit_note: 'AV',
   purchase_note: 'BA',
   transfer_note: 'BT',
 } as const;
@@ -513,6 +514,45 @@ const purchaseOrderToRow = async (payload: JsonRecord) => {
   };
 };
 
+const getDocumentStatus = (value: any) => String(value || '').toLowerCase();
+
+const isValidatedDocumentStatus = (value: any) => getDocumentStatus(value) === 'validated';
+
+const assertDocumentIsMutable = (document: JsonRecord) => {
+  if (isValidatedDocumentStatus(document.status)) {
+    throw createApiError(
+      'Ce document est valide et ne peut plus etre modifie ou supprime. Utilise un retour, un avoir ou un nouveau document correctif.',
+      409
+    );
+  }
+};
+
+const buildDocumentSequencePrefix = (documentType: keyof typeof TYPE_PREFIX, issuedAt: string) => {
+  const year = new Date(issuedAt || new Date().toISOString()).getUTCFullYear();
+  return `${TYPE_PREFIX[documentType]}-${year}`;
+};
+
+const parseDocumentSequence = (documentNumber: string, prefix: string) => {
+  const normalizedNumber = String(documentNumber || '').trim();
+  if (!normalizedNumber.startsWith(`${prefix}-`)) return null;
+  const candidate = normalizedNumber.slice(prefix.length + 1);
+  const parsed = Number(candidate);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const generateNextDocumentNumber = async (documentType: keyof typeof TYPE_PREFIX, issuedAt: string) => {
+  const prefix = buildDocumentSequencePrefix(documentType, issuedAt);
+  const rows = await withTable('businessDocuments', 'documents', (tableName) =>
+    ensureSupabase().from(tableName).select('document_number').eq('document_type', documentType)
+  );
+  const maxSequence = asArray<JsonRecord>(rows).reduce((currentMax, row) => {
+    const nextValue = parseDocumentSequence(String(row.document_number || ''), prefix);
+    return nextValue && nextValue > currentMax ? nextValue : currentMax;
+  }, 0);
+
+  return `${prefix}-${String(maxSequence + 1).padStart(6, '0')}`;
+};
+
 const documentFromRow = (row: JsonRecord) => {
   const normalized = normalizeRecord(row);
   return {
@@ -524,6 +564,9 @@ const documentFromRow = (row: JsonRecord) => {
     customerName: normalized.customerName ?? normalized.customer_name ?? '',
     customerPhone: normalized.customerPhone ?? normalized.customer_phone ?? '',
     customerAddress: normalized.customerAddress ?? normalized.customer_address ?? '',
+    customerIce: normalized.customerIce ?? normalized.customer_ice ?? '',
+    customerIf: normalized.customerIf ?? normalized.customer_if ?? '',
+    customerRc: normalized.customerRc ?? normalized.customer_rc ?? '',
     issueDate: normalized.issueDate ?? normalized.issue_date ?? normalized.createdAt,
     dueDate: normalized.dueDate ?? normalized.due_date,
     status: normalized.status || 'draft',
@@ -539,9 +582,18 @@ const documentFromRow = (row: JsonRecord) => {
     subtotal: Number(normalized.subtotal || 0),
     taxAmount: Number(normalized.taxAmount ?? normalized.tax_amount ?? 0),
     totalAmount: Number(normalized.totalAmount ?? normalized.total_amount ?? 0),
+    paymentMethod: normalized.paymentMethod ?? normalized.payment_method ?? '',
+    paymentReference: normalized.paymentReference ?? normalized.payment_reference ?? '',
+    restockOnValidate: normalized.restockOnValidate ?? normalized.restock_on_validate ?? true,
     notes: normalized.notes || '',
+    createdBy: parseId(normalized.createdBy ?? normalized.created_by),
+    updatedBy: parseId(normalized.updatedBy ?? normalized.updated_by),
+    validatedBy: parseId(normalized.validatedBy ?? normalized.validated_by),
+    validatedAt: normalized.validatedAt ?? normalized.validated_at ?? null,
+    cancelledAt: normalized.cancelledAt ?? normalized.cancelled_at ?? null,
     userId: parseId(normalized.userId ?? normalized.user_id),
     createdAt: normalized.createdAt,
+    updatedAt: normalized.updatedAt ?? normalized.updated_at ?? normalized.createdAt,
   };
 };
 
@@ -576,8 +628,9 @@ const computeDocumentTotals = (
 
 const documentToRow = async (payload: JsonRecord, existing?: JsonRecord) => {
   const user = await getCurrentUser();
-  const documentType = payload.documentType || existing?.documentType || existing?.document_type;
+  const documentType = (payload.documentType || existing?.documentType || existing?.document_type) as keyof typeof TYPE_PREFIX;
   const customerAddress = payload.customerAddress || existing?.customerAddress || existing?.customer_address || '';
+  const issueDate = payload.issueDate || existing?.issueDate || existing?.issue_date || new Date().toISOString();
   const { normalizedItems, subtotal, taxAmount, totalAmount } = computeDocumentTotals(
     payload.items,
     payload.taxRate,
@@ -587,25 +640,56 @@ const documentToRow = async (payload: JsonRecord, existing?: JsonRecord) => {
   if (!payload.customerName || normalizedItems.length === 0) {
     throw createApiError('Customer name and at least one item are required');
   }
+
+  const paymentMethod = String(
+    payload.paymentMethod || existing?.paymentMethod || existing?.payment_method || ''
+  ).trim();
+  const paymentReference = String(
+    payload.paymentReference || existing?.paymentReference || existing?.payment_reference || ''
+  ).trim();
+
+  if (documentType === 'invoice' && !paymentMethod) {
+    throw createApiError('Le mode de paiement est obligatoire pour une facture.', 400);
+  }
+
+  const nextStatus = payload.status || existing?.status || 'draft';
+
   return {
     document_type: documentType,
     document_number:
       existing?.documentNumber ||
       existing?.document_number ||
-      `${TYPE_PREFIX[payload.documentType as keyof typeof TYPE_PREFIX]}-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(Math.random() * 9000) + 1000}`,
+      await generateNextDocumentNumber(documentType, issueDate),
     source_document_id: payload.sourceDocumentId || existing?.sourceDocumentId || existing?.source_document_id || null,
     source_document_type: payload.sourceDocumentType || existing?.sourceDocumentType || existing?.source_document_type || null,
     customer_name: payload.customerName,
     customer_phone: payload.customerPhone || '',
     customer_address: customerAddress,
-    issue_date: payload.issueDate || existing?.issueDate || existing?.issue_date || new Date().toISOString(),
+    customer_ice: String(payload.customerIce || existing?.customerIce || existing?.customer_ice || '').trim(),
+    customer_if: String(payload.customerIf || existing?.customerIf || existing?.customer_if || '').trim(),
+    customer_rc: String(payload.customerRc || existing?.customerRc || existing?.customer_rc || '').trim(),
+    issue_date: issueDate,
     due_date: payload.dueDate || null,
-    status: payload.status || existing?.status || 'draft',
+    status: nextStatus,
     items: normalizedItems,
     subtotal,
     tax_amount: taxAmount,
     total_amount: totalAmount,
+    payment_method: paymentMethod,
+    payment_reference: paymentReference,
+    restock_on_validate:
+      documentType === 'credit_note'
+        ? payload.restockOnValidate !== false
+        : Boolean(existing?.restockOnValidate ?? existing?.restock_on_validate ?? false),
     notes: payload.notes || '',
+    created_by: existing?.createdBy || existing?.created_by || user.id,
+    updated_by: user.id,
+    validated_by: isValidatedDocumentStatus(nextStatus)
+      ? existing?.validatedBy || existing?.validated_by || user.id
+      : null,
+    validated_at: isValidatedDocumentStatus(nextStatus)
+      ? existing?.validatedAt || existing?.validated_at || new Date().toISOString()
+      : null,
     user_id: user.id,
   };
 };
@@ -630,6 +714,17 @@ const applyBusinessDocumentEffects = async (document: ReturnType<typeof document
   if (!shouldApplyDocumentEffects(document.status)) return;
 
   if (document.documentType === 'purchase_note') {
+    for (const item of asArray<JsonRecord>(document.items)) {
+      const productId = parseId(item.productId);
+      if (!productId) continue;
+      const product = await loadProductRecord(productId);
+      if (!product) continue;
+      const nextStock = Math.max(0, Number(product.stock || 0) + Number(item.quantity || 0) * direction);
+      await updateProductRecord(productId, { stock: nextStock });
+    }
+  }
+
+  if (document.documentType === 'credit_note' && document.restockOnValidate !== false) {
     for (const item of asArray<JsonRecord>(document.items)) {
       const productId = parseId(item.productId);
       if (!productId) continue;
@@ -1003,6 +1098,7 @@ const updateBusinessDocument = async (id: string, payload: JsonRecord) => {
   const current = asArray<JsonRecord>(rows)[0];
   if (!current) throw createApiError('Document not found', 404);
   const currentDocument = documentFromRow(current);
+  assertDocumentIsMutable(currentDocument);
   const row = await documentToRow(payload, current);
   await applyBusinessDocumentEffects(currentDocument, -1);
   const data = await withTable('businessDocuments', 'documents', (tableName) =>
@@ -1019,7 +1115,9 @@ const deleteBusinessDocument = async (id: string) => {
   );
   const current = asArray<JsonRecord>(rows)[0];
   if (current) {
-    await applyBusinessDocumentEffects(documentFromRow(current), -1);
+    const currentDocument = documentFromRow(current);
+    assertDocumentIsMutable(currentDocument);
+    await applyBusinessDocumentEffects(currentDocument, -1);
   }
   await withTable('businessDocuments', 'documents', (tableName) => ensureSupabase().from(tableName).delete().eq('id', id));
   return { data: { message: 'Document deleted' } };
@@ -1036,17 +1134,21 @@ const convertBusinessDocument = async (id: string) => {
     throw createApiError('Only quote and delivery note can be converted to invoice');
   }
   const user = await getCurrentUser();
+  const invoiceNumber = await generateNextDocumentNumber('invoice', new Date().toISOString());
   const data = await withTable('businessDocuments', 'documents', (tableName) =>
     ensureSupabase()
       .from(tableName)
       .insert({
         document_type: 'invoice',
-        document_number: `${TYPE_PREFIX.invoice}-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(Math.random() * 9000) + 1000}`,
+        document_number: invoiceNumber,
         source_document_id: source._id,
         source_document_type: source.documentType,
         customer_name: source.customerName,
         customer_phone: source.customerPhone || '',
         customer_address: source.customerAddress || '',
+        customer_ice: source.customerIce || '',
+        customer_if: source.customerIf || '',
+        customer_rc: source.customerRc || '',
         issue_date: new Date().toISOString(),
         due_date: source.dueDate || null,
         status: 'draft',
@@ -1054,12 +1156,72 @@ const convertBusinessDocument = async (id: string) => {
         subtotal: source.subtotal,
         tax_amount: source.taxAmount,
         total_amount: source.totalAmount,
+        payment_method: source.paymentMethod || '',
+        payment_reference: source.paymentReference || '',
         notes: source.notes || '',
+        created_by: user.id,
+        updated_by: user.id,
+        validated_by: null,
+        validated_at: null,
         user_id: user.id,
       })
       .select('*')
       .single()
   );
+  return { data: documentFromRow(data as JsonRecord) };
+};
+
+const convertInvoiceToCreditNote = async (id: string) => {
+  const rows = await withTable('businessDocuments', 'documents', (tableName) =>
+    ensureSupabase().from(tableName).select('*').eq('id', id).limit(1)
+  );
+  const current = asArray<JsonRecord>(rows)[0];
+  if (!current) throw createApiError('Document not found', 404);
+  const source = documentFromRow(current);
+  if (source.documentType !== 'invoice') {
+    throw createApiError('Only invoice can be converted to credit note');
+  }
+
+  const user = await getCurrentUser();
+  const creditNoteNumber = await generateNextDocumentNumber('credit_note', new Date().toISOString());
+  const sourceLabel = source.documentNumber || source._id;
+  const data = await withTable('businessDocuments', 'documents', (tableName) =>
+    ensureSupabase()
+      .from(tableName)
+      .insert({
+        document_type: 'credit_note',
+        document_number: creditNoteNumber,
+        source_document_id: source._id,
+        source_document_type: source.documentType,
+        customer_name: source.customerName,
+        customer_phone: source.customerPhone || '',
+        customer_address: source.customerAddress || '',
+        customer_ice: source.customerIce || '',
+        customer_if: source.customerIf || '',
+        customer_rc: source.customerRc || '',
+        issue_date: new Date().toISOString(),
+        due_date: source.dueDate || null,
+        status: 'draft',
+        items: source.items,
+        subtotal: source.subtotal,
+        tax_amount: source.taxAmount,
+        total_amount: source.totalAmount,
+        payment_method: source.paymentMethod || '',
+        payment_reference: source.paymentReference || '',
+        restock_on_validate: true,
+        notes: source.notes
+          ? `${source.notes}\n\nAvoir genere depuis la facture ${sourceLabel}.`
+          : `Avoir genere depuis la facture ${sourceLabel}.`,
+        created_by: user.id,
+        updated_by: user.id,
+        validated_by: null,
+        validated_at: null,
+        user_id: user.id,
+      })
+      .select('*')
+      .single()
+  );
+
   return { data: documentFromRow(data as JsonRecord) };
 };
 
@@ -1332,6 +1494,7 @@ export const handleSupabaseApiRequest = async (
   if (method === 'PUT' && cleanPath.startsWith('/documents/')) return updateBusinessDocument(cleanPath.split('/')[2], payload);
   if (method === 'DELETE' && cleanPath.startsWith('/documents/')) return deleteBusinessDocument(cleanPath.split('/')[2]);
   if (method === 'POST' && /\/documents\/[^/]+\/convert-to-invoice$/.test(cleanPath)) return convertBusinessDocument(cleanPath.split('/')[2]);
+  if (method === 'POST' && /\/documents\/[^/]+\/convert-to-credit-note$/.test(cleanPath)) return convertInvoiceToCreditNote(cleanPath.split('/')[2]);
 
   if (method === 'GET' && cleanPath === '/analytics') return getAnalytics();
 

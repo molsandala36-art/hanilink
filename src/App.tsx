@@ -16,6 +16,7 @@ import Suppliers from './pages/Suppliers';
 import PurchaseOrders from './pages/PurchaseOrders';
 import Expenses from './pages/Expenses';
 import BusinessDocuments from './pages/BusinessDocuments';
+import FiscalJournal from './pages/FiscalJournal';
 import ActivationScreen from './pages/ActivationScreen';
 import ClientsManagement from './pages/ClientsManagement';
 import CreditsManagement from './pages/CreditsManagement';
@@ -257,6 +258,11 @@ function App() {
             <Route path="documents" element={
               <ProtectedRoute roles={['admin']} currentUser={currentUser}>
                 <BusinessDocuments />
+              </ProtectedRoute>
+            } />
+            <Route path="fiscal-journal" element={
+              <ProtectedRoute roles={['admin']} currentUser={currentUser}>
+                <FiscalJournal />
               </ProtectedRoute>
             } />
             <Route path="pos" element={<POS />} />

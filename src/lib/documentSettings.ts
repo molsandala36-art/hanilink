@@ -24,12 +24,16 @@ export interface PrintableDocument {
   customerName?: string;
   customerPhone?: string;
   customerAddress?: string;
+  customerIce?: string;
+  customerIf?: string;
+  customerRc?: string;
   notes?: string;
   subtotal: number;
   taxAmount: number;
   totalAmount: number;
   taxRateLabel?: string;
   paymentMethodLabel?: string;
+  paymentReference?: string;
   items: PrintLineItem[];
 }
 
@@ -121,10 +125,16 @@ function buildCustomerRows(doc: PrintableDocument) {
     doc.customerName ? `<div class="meta-row"><span>Client</span><strong>${doc.customerName}</strong></div>` : '',
     doc.customerPhone ? `<div class="meta-row"><span>Telephone</span><strong>${doc.customerPhone}</strong></div>` : '',
     doc.customerAddress ? `<div class="meta-row"><span>Adresse</span><strong>${doc.customerAddress}</strong></div>` : '',
+    doc.customerIce ? `<div class="meta-row"><span>ICE client</span><strong>${doc.customerIce}</strong></div>` : '',
+    doc.customerIf ? `<div class="meta-row"><span>IF client</span><strong>${doc.customerIf}</strong></div>` : '',
+    doc.customerRc ? `<div class="meta-row"><span>RC client</span><strong>${doc.customerRc}</strong></div>` : '',
     `<div class="meta-row"><span>Numero</span><strong>${doc.documentNumber}</strong></div>`,
     `<div class="meta-row"><span>Date</span><strong>${formatDate(doc.issueDate)}</strong></div>`,
     doc.paymentMethodLabel
       ? `<div class="meta-row"><span>Paiement</span><strong>${doc.paymentMethodLabel}</strong></div>`
+      : '',
+    doc.paymentReference
+      ? `<div class="meta-row"><span>Reference paiement</span><strong>${doc.paymentReference}</strong></div>`
       : '',
   ]
     .filter(Boolean)
@@ -262,10 +272,14 @@ function buildCompactTemplate(settings: DocumentStyleSettings, user: PrintableUs
           <span>${doc.documentNumber}</span>
         </div>
       </div>
-      <div class="compact-grid">
+        <div class="compact-grid">
         <div><strong>Date:</strong> ${formatDate(doc.issueDate)}</div>
         <div><strong>Client:</strong> ${doc.customerName || '-'}</div>
         ${doc.paymentMethodLabel ? `<div><strong>Paiement:</strong> ${doc.paymentMethodLabel}</div>` : ''}
+        ${doc.paymentReference ? `<div><strong>Ref paiement:</strong> ${doc.paymentReference}</div>` : ''}
+        ${doc.customerIce ? `<div><strong>ICE client:</strong> ${doc.customerIce}</div>` : ''}
+        ${doc.customerIf ? `<div><strong>IF client:</strong> ${doc.customerIf}</div>` : ''}
+        ${doc.customerRc ? `<div><strong>RC client:</strong> ${doc.customerRc}</div>` : ''}
         ${user.shopName ? `<div><strong>Boutique:</strong> ${user.shopName}</div>` : ''}
       </div>
       <table class="compact-table">
